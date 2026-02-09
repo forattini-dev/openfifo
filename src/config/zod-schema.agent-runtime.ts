@@ -191,6 +191,7 @@ export const ToolsWebSearchSchema = z
 export const ToolsWebFetchSchema = z
   .object({
     enabled: z.boolean().optional(),
+    client: z.enum(["fetch", "recker"]).optional(),
     maxChars: z.number().int().positive().optional(),
     maxCharsCap: z.number().int().positive().optional(),
     timeoutSeconds: z.number().int().positive().optional(),

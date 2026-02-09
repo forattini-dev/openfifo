@@ -206,7 +206,7 @@ export async function runOnboardingWizard(
         ? bindRaw
         : "loopback";
 
-    let authMode: GatewayAuthChoice = "token";
+    let authMode: GatewayAuthChoice = "password";
     if (
       baseConfig.gateway?.auth?.mode === "token" ||
       baseConfig.gateway?.auth?.mode === "password"
@@ -254,10 +254,10 @@ export async function runOnboardingWizard(
       return "Auto";
     };
     const formatAuth = (value: GatewayAuthChoice) => {
-      if (value === "token") {
-        return "Token (default)";
+      if (value === "password") {
+        return "Password (default)";
       }
-      return "Password";
+      return "Token";
     };
     const formatTailscale = (value: "off" | "serve" | "funnel") => {
       if (value === "off") {
@@ -283,7 +283,7 @@ export async function runOnboardingWizard(
       : [
           `Gateway port: ${DEFAULT_GATEWAY_PORT}`,
           "Gateway bind: Loopback (127.0.0.1)",
-          "Gateway auth: Token (default)",
+          "Gateway auth: Password (default)",
           "Tailscale exposure: Off",
           "Direct to chat channels.",
         ];

@@ -2135,7 +2135,7 @@ Example:
 `agents.defaults.subagents` configures sub-agent defaults:
 
 - `model`: default model for spawned sub-agents (string or `{ primary, fallbacks }`). If omitted, sub-agents inherit the caller’s model unless overridden per agent or per call.
-- `maxConcurrent`: max concurrent sub-agent runs (default 1)
+- `maxConcurrent`: max concurrent sub-agent runs (default 6)
 - `archiveAfterMinutes`: auto-archive sub-agent sessions after N minutes (default 60; set `0` to disable)
 - Per-subagent tool policy: `tools.subagents.tools.allow` / `tools.subagents.tools.deny` (deny wins)
 
@@ -2281,7 +2281,7 @@ Notes:
 
 `agents.defaults.maxConcurrent` sets the maximum number of embedded agent runs that can
 execute in parallel across sessions. Each session is still serialized (one run
-per session key at a time). Default: 1.
+per session key at a time). Default: 3.
 
 ### `agents.defaults.sandbox`
 
@@ -2969,7 +2969,7 @@ Defaults:
     port: 18789, // WS + HTTP multiplex
     bind: "loopback",
     // controlUi: { enabled: true, basePath: "/openclaw" }
-    // auth: { mode: "token", token: "your-token" } // token gates WS + Control UI access
+    // auth: { mode: "password", password: "your-password" } // gates WS + Control UI access
     // tailscale: { mode: "off" | "serve" | "funnel" }
   },
 }
@@ -2981,11 +2981,11 @@ Control UI base path:
 - Examples: `"/ui"`, `"/openclaw"`, `"/apps/openclaw"`.
 - Default: root (`/`) (unchanged).
 - `gateway.controlUi.root` sets the filesystem root for Control UI assets (default: `dist/control-ui`).
-- `gateway.controlUi.allowInsecureAuth` allows token-only auth for the Control UI when
+- `gateway.controlUi.allowInsecureAuth` allows password-only auth for the Control UI when
   device identity is omitted (typically over HTTP). Default: `false`. Prefer HTTPS
   (Tailscale Serve) or `127.0.0.1`.
 - `gateway.controlUi.dangerouslyDisableDeviceAuth` disables device identity checks for the
-  Control UI (token/password only). Default: `false`. Break-glass only.
+  Control UI (password/proxy only). Default: `false`. Break-glass only.
 
 Related docs:
 
@@ -3006,16 +3006,18 @@ Notes:
 - `gateway.port` controls the single multiplexed port used for WebSocket + HTTP (control UI, hooks, A2UI).
 - OpenAI Chat Completions endpoint: **disabled by default**; enable with `gateway.http.endpoints.chatCompletions.enabled: true`.
 - Precedence: `--port` > `OPENCLAW_GATEWAY_PORT` > `gateway.port` > default `18789`.
-- Gateway auth is required by default (token/password or Tailscale Serve identity). Non-loopback binds require a shared token/password.
-- The onboarding wizard generates a gateway token by default (even on loopback).
+- Gateway auth is required by default (password, proxy auth, or Tailscale Serve identity).
+  Non-loopback binds require a shared password unless you use proxy auth.
+- The onboarding wizard generates a gateway password by default (even on loopback).
 - `gateway.remote.token` is **only** for remote CLI calls; it does not enable local gateway auth. `gateway.token` is ignored.
 
 Auth and Tailscale:
 
-- `gateway.auth.mode` sets the handshake requirements (`token` or `password`). When unset, token auth is assumed.
-- `gateway.auth.token` stores the shared token for token auth (used by the CLI on the same machine).
+- `gateway.auth.mode` sets the handshake requirements (`token`, `password`, or `proxy`). When unset, token auth is assumed.
+- `gateway.auth.token` stores the shared token for token auth (used by non-browser clients).
+- `gateway.auth.password` can be set here, or via `OPENCLAW_GATEWAY_PASSWORD` (recommended for the Control UI).
+- `gateway.auth.proxy.*` configures header names for proxy auth (requires `gateway.trustedProxies`).
 - When `gateway.auth.mode` is set, only that method is accepted (plus optional Tailscale headers).
-- `gateway.auth.password` can be set here, or via `OPENCLAW_GATEWAY_PASSWORD` (recommended).
 - `gateway.auth.allowTailscale` allows Tailscale Serve identity headers
   (`tailscale-user-login`) to satisfy auth when the request arrives on loopback
   with `x-forwarded-for`, `x-forwarded-proto`, and `x-forwarded-host`. OpenClaw

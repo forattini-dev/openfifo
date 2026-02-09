@@ -151,11 +151,11 @@ describe("control UI routing", () => {
     expect(container.scrollTop).toBe(maxScroll);
   });
 
-  it("hydrates token from URL params and strips it", async () => {
+  it("strips token URL params without importing them", async () => {
     const app = mountApp("/ui/overview?token=abc123");
     await app.updateComplete;
 
-    expect(app.settings.token).toBe("abc123");
+    expect(app.settings.gatewayUrl).toContain("ws://");
     expect(window.location.pathname).toBe("/ui/overview");
     expect(window.location.search).toBe("");
   });
@@ -169,24 +169,24 @@ describe("control UI routing", () => {
     expect(window.location.search).toBe("");
   });
 
-  it("hydrates token from URL params even when settings already set", async () => {
+  it("strips token URL params even when settings already set", async () => {
     localStorage.setItem(
       "openclaw.control.settings.v1",
-      JSON.stringify({ token: "existing-token" }),
+      JSON.stringify({ gatewayUrl: "ws://example.test" }),
     );
     const app = mountApp("/ui/overview?token=abc123");
     await app.updateComplete;
 
-    expect(app.settings.token).toBe("abc123");
+    expect(app.settings.gatewayUrl).toBe("ws://example.test");
     expect(window.location.pathname).toBe("/ui/overview");
     expect(window.location.search).toBe("");
   });
 
-  it("hydrates token from URL hash and strips it", async () => {
+  it("strips token URL hash without importing it", async () => {
     const app = mountApp("/ui/overview#token=abc123");
     await app.updateComplete;
 
-    expect(app.settings.token).toBe("abc123");
+    expect(app.settings.gatewayUrl).toContain("ws://");
     expect(window.location.pathname).toBe("/ui/overview");
     expect(window.location.hash).toBe("");
   });

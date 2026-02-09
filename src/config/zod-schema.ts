@@ -390,10 +390,22 @@ export const OpenClawSchema = z
           .optional(),
         auth: z
           .object({
-            mode: z.union([z.literal("token"), z.literal("password")]).optional(),
+            mode: z
+              .union([z.literal("token"), z.literal("password"), z.literal("proxy")])
+              .optional(),
             token: z.string().optional(),
             password: z.string().optional(),
             allowTailscale: z.boolean().optional(),
+            proxy: z
+              .object({
+                userHeader: z.string().optional(),
+                emailHeader: z.string().optional(),
+                nameHeader: z.string().optional(),
+                roleHeader: z.string().optional(),
+                scopesHeader: z.string().optional(),
+              })
+              .strict()
+              .optional(),
           })
           .strict()
           .optional(),

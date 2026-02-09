@@ -44,7 +44,7 @@ This script:
 - runs the onboarding wizard
 - prints optional provider setup hints
 - starts the gateway via Docker Compose
-- generates a gateway token and writes it to `.env`
+- generates a gateway password and writes it to `.env`
 
 Optional env vars:
 
@@ -55,7 +55,7 @@ Optional env vars:
 After it finishes:
 
 - Open `http://127.0.0.1:18789/` in your browser.
-- Paste the token into the Control UI (Settings → token).
+- Enter the password when prompted (from `.env` / `OPENCLAW_GATEWAY_PASSWORD`).
 - Need the URL again? Run `docker compose run --rm openclaw-cli dashboard --no-open`.
 
 It writes config/workspace on the host:
@@ -81,10 +81,10 @@ Note: run `docker compose ...` from the repo root. If you enabled
 docker compose -f docker-compose.yml -f docker-compose.extra.yml <command>
 ```
 
-### Control UI token + pairing (Docker)
+### Control UI auth + pairing (Docker)
 
 If you see “unauthorized” or “disconnected (1008): pairing required”, fetch a
-fresh dashboard link and approve the browser device:
+fresh dashboard link, enter the gateway password, and approve the browser device:
 
 ```bash
 docker compose run --rm openclaw-cli dashboard --no-open
@@ -286,7 +286,7 @@ URL you land on and paste it back into the wizard to finish auth.
 ### Health check
 
 ```bash
-docker compose exec openclaw-gateway node dist/index.js health --token "$OPENCLAW_GATEWAY_TOKEN"
+docker compose exec openclaw-gateway node dist/index.js health --password "$OPENCLAW_GATEWAY_PASSWORD"
 ```
 
 ### E2E smoke test (Docker)

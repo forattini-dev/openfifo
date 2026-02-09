@@ -49,7 +49,7 @@ It does not install or modify anything on the remote host.
   </Step>
   <Step title="Gateway">
     - Prompts for port, bind, auth mode, and tailscale exposure.
-    - Recommended: keep token auth enabled even for loopback so local WS clients must authenticate.
+    - Recommended: keep password auth enabled even for loopback so local WS clients must authenticate.
     - Disable auth only if you fully trust every local process.
     - Non-loopback binds still require auth.
   </Step>
@@ -103,7 +103,7 @@ Remote mode does not install or modify anything on the remote host.
 What you set:
 
 - Remote gateway URL (`ws://...`)
-- Token if remote gateway auth is required (recommended)
+- Password if remote gateway auth is required (recommended)
 
 <Note>
 - If gateway is loopback-only, use SSH tunneling or a tailnet.

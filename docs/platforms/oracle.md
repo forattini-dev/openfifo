@@ -107,17 +107,17 @@ When prompted "How do you want to hatch your bot?", select **"Do this later"**.
 
 > Note: If you hit ARM-native build issues, start with system packages (e.g. `sudo apt install -y build-essential`) before reaching for Homebrew.
 
-## 6) Configure Gateway (loopback + token auth) and enable Tailscale Serve
+## 6) Configure Gateway (loopback + password auth) and enable Tailscale Serve
 
-Use token auth as the default. It’s predictable and avoids needing any “insecure auth” Control UI flags.
+Use password auth as the default. It keeps the Control UI usable and avoids “insecure auth” flags.
 
 ```bash
 # Keep the Gateway private on the VM
 openclaw config set gateway.bind loopback
 
 # Require auth for the Gateway + Control UI
-openclaw config set gateway.auth.mode token
-openclaw doctor --generate-gateway-token
+openclaw config set gateway.auth.mode password
+openclaw config set gateway.auth.password "<your-password>"
 
 # Expose over Tailscale Serve (HTTPS + tailnet access)
 openclaw config set gateway.tailscale.mode serve

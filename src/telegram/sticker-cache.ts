@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import type { ModelCatalogEntry } from "../agents/model-catalog.js";
 import type { OpenClawConfig } from "../config/config.js";
@@ -11,11 +10,12 @@ import {
 import { resolveDefaultModelForAgent } from "../agents/model-selection.js";
 import { STATE_DIR } from "../config/paths.js";
 import { logVerbose } from "../globals.js";
-import { loadJsonFile, saveJsonFile } from "../infra/json-file.js";
 import { resolveAutoImageModel } from "../media-understanding/runner.js";
+import { buildS3dbKey, getS3dbStorage } from "../persistence/s3db.js";
 
 const CACHE_FILE = path.join(STATE_DIR, "telegram", "sticker-cache.json");
 const CACHE_VERSION = 1;
+const CACHE_KEY = buildS3dbKey("telegram/sticker-cache", CACHE_FILE);
 
 export interface CachedSticker {
   fileId: string;
@@ -32,49 +32,99 @@ interface StickerCache {
   stickers: Record<string, CachedSticker>;
 }
 
-function loadCache(): StickerCache {
-  const data = loadJsonFile(CACHE_FILE);
-  if (!data || typeof data !== "object") {
-    return { version: CACHE_VERSION, stickers: {} };
+let inMemoryCache: StickerCache = { version: CACHE_VERSION, stickers: {} };
+let cacheLoadPromise: Promise<void> | null = null;
+
+function coerceCache(raw: unknown): StickerCache | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
   }
-  const cache = data as StickerCache;
-  if (cache.version !== CACHE_VERSION) {
-    // Future: handle migration if needed
-    return { version: CACHE_VERSION, stickers: {} };
+  const cache = raw as StickerCache;
+  if (cache.version !== CACHE_VERSION || typeof cache.stickers !== "object") {
+    return null;
   }
   return cache;
 }
 
-function saveCache(cache: StickerCache): void {
-  saveJsonFile(CACHE_FILE, cache);
+function parseCachedAtMs(value: string | undefined): number {
+  if (!value) {
+    return 0;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function mergeStickerIntoCache(sticker: CachedSticker): void {
+  const existing = inMemoryCache.stickers[sticker.fileUniqueId];
+  if (!existing) {
+    inMemoryCache.stickers[sticker.fileUniqueId] = sticker;
+    return;
+  }
+  const existingTs = parseCachedAtMs(existing.cachedAt);
+  const nextTs = parseCachedAtMs(sticker.cachedAt);
+  if (nextTs >= existingTs) {
+    inMemoryCache.stickers[sticker.fileUniqueId] = sticker;
+  }
+}
+
+async function hydrateCacheFromS3db(): Promise<void> {
+  const storage = await getS3dbStorage();
+  const raw = await storage.get(CACHE_KEY);
+  const cache = coerceCache(raw);
+  if (!cache) {
+    return;
+  }
+  for (const sticker of Object.values(cache.stickers)) {
+    if (sticker && typeof sticker === "object" && typeof sticker.fileUniqueId === "string") {
+      mergeStickerIntoCache(sticker as CachedSticker);
+    }
+  }
+}
+
+function ensureCacheLoaded(): void {
+  if (cacheLoadPromise) {
+    return;
+  }
+  cacheLoadPromise = hydrateCacheFromS3db().catch(() => undefined);
+}
+
+function persistCache(): void {
+  const snapshot: StickerCache = {
+    version: CACHE_VERSION,
+    stickers: { ...inMemoryCache.stickers },
+  };
+  void (async () => {
+    const storage = await getS3dbStorage();
+    await storage.set(CACHE_KEY, snapshot as Record<string, unknown>, { behavior: "body-only" });
+  })().catch(() => undefined);
 }
 
 /**
  * Get a cached sticker by its unique ID.
  */
 export function getCachedSticker(fileUniqueId: string): CachedSticker | null {
-  const cache = loadCache();
-  return cache.stickers[fileUniqueId] ?? null;
+  ensureCacheLoaded();
+  return inMemoryCache.stickers[fileUniqueId] ?? null;
 }
 
 /**
  * Add or update a sticker in the cache.
  */
 export function cacheSticker(sticker: CachedSticker): void {
-  const cache = loadCache();
-  cache.stickers[sticker.fileUniqueId] = sticker;
-  saveCache(cache);
+  ensureCacheLoaded();
+  mergeStickerIntoCache(sticker);
+  persistCache();
 }
 
 /**
  * Search cached stickers by text query (fuzzy match on description + emoji + setName).
  */
 export function searchStickers(query: string, limit = 10): CachedSticker[] {
-  const cache = loadCache();
+  ensureCacheLoaded();
   const queryLower = query.toLowerCase();
   const results: Array<{ sticker: CachedSticker; score: number }> = [];
 
-  for (const sticker of Object.values(cache.stickers)) {
+  for (const sticker of Object.values(inMemoryCache.stickers)) {
     let score = 0;
     const descLower = sticker.description.toLowerCase();
 
@@ -117,16 +167,16 @@ export function searchStickers(query: string, limit = 10): CachedSticker[] {
  * Get all cached stickers (for debugging/listing).
  */
 export function getAllCachedStickers(): CachedSticker[] {
-  const cache = loadCache();
-  return Object.values(cache.stickers);
+  ensureCacheLoaded();
+  return Object.values(inMemoryCache.stickers);
 }
 
 /**
  * Get cache statistics.
  */
 export function getCacheStats(): { count: number; oldestAt?: string; newestAt?: string } {
-  const cache = loadCache();
-  const stickers = Object.values(cache.stickers);
+  ensureCacheLoaded();
+  const stickers = Object.values(inMemoryCache.stickers);
   if (stickers.length === 0) {
     return { count: 0 };
   }
@@ -138,6 +188,11 @@ export function getCacheStats(): { count: number; oldestAt?: string; newestAt?: 
     oldestAt: sorted[0]?.cachedAt,
     newestAt: sorted[sorted.length - 1]?.cachedAt,
   };
+}
+
+export function resetStickerCacheForTest(): void {
+  inMemoryCache = { version: CACHE_VERSION, stickers: {} };
+  cacheLoadPromise = null;
 }
 
 const STICKER_DESCRIPTION_PROMPT =

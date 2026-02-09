@@ -13,6 +13,11 @@ import {
   type SessionEntry,
   updateSessionStore,
 } from "../../config/sessions.js";
+import {
+  archiveSessionFile,
+  ensureSessionFileCached,
+  persistSessionFileToS3db,
+} from "../../persistence/session-files.js";
 import { normalizeAgentId, parseAgentSessionKey } from "../../routing/session-key.js";
 import {
   ErrorCodes,
@@ -349,11 +354,18 @@ export const sessionsHandlers: GatewayRequestHandlers = {
         entry?.sessionFile,
         target.agentId,
       )) {
-        if (!fs.existsSync(candidate)) {
-          continue;
-        }
         try {
-          archived.push(archiveFileOnDisk(candidate, "deleted"));
+          const archivedKey = await archiveSessionFile({
+            sessionFile: candidate,
+            reason: "deleted",
+          });
+          if (archivedKey) {
+            archived.push(archivedKey);
+            continue;
+          }
+          if (fs.existsSync(candidate)) {
+            archived.push(archiveFileOnDisk(candidate, "deleted"));
+          }
         } catch {
           // Best-effort.
         }
@@ -435,6 +447,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       return;
     }
 
+    await ensureSessionFileCached(filePath);
     const raw = fs.readFileSync(filePath, "utf-8");
     const lines = raw.split(/\r?\n/).filter((l) => l.trim().length > 0);
     if (lines.length <= maxLines) {
@@ -451,9 +464,12 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       return;
     }
 
-    const archived = archiveFileOnDisk(filePath, "bak");
+    const archived =
+      (await archiveSessionFile({ sessionFile: filePath, reason: "bak" })) ??
+      archiveFileOnDisk(filePath, "bak");
     const keptLines = lines.slice(-maxLines);
     fs.writeFileSync(filePath, `${keptLines.join("\n")}\n`, "utf-8");
+    await persistSessionFileToS3db(filePath);
 
     await updateSessionStore(storePath, (store) => {
       const entryKey = compactTarget.primaryKey;

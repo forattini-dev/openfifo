@@ -1,7 +1,7 @@
 ---
 summary: "CLI reference for `openclaw dashboard` (open the Control UI)"
 read_when:
-  - You want to open the Control UI with your current token
+  - You want to open the Control UI with your current auth (password/proxy)
   - You want to print the URL without launching a browser
 title: "dashboard"
 ---

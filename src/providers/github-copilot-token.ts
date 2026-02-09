@@ -1,6 +1,6 @@
 import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
-import { loadJsonFile, saveJsonFile } from "../infra/json-file.js";
+import { buildS3dbKey, getS3dbStorage } from "../persistence/s3db.js";
 
 const COPILOT_TOKEN_URL = "https://api.github.com/copilot_internal/v2/token";
 
@@ -14,6 +14,40 @@ export type CachedCopilotToken = {
 
 function resolveCopilotTokenCachePath(env: NodeJS.ProcessEnv = process.env) {
   return path.join(resolveStateDir(env), "credentials", "github-copilot.token.json");
+}
+
+function resolveCopilotTokenCacheKey(env: NodeJS.ProcessEnv = process.env) {
+  const pathname = resolveCopilotTokenCachePath(env);
+  return buildS3dbKey("credentials/github-copilot-token", pathname);
+}
+
+async function readCopilotTokenCache(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<CachedCopilotToken | null> {
+  const storage = await getS3dbStorage();
+  const key = resolveCopilotTokenCacheKey(env);
+  const raw = await storage.get(key);
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const rec = raw as Partial<CachedCopilotToken>;
+  if (typeof rec.token !== "string" || typeof rec.expiresAt !== "number") {
+    return null;
+  }
+  return {
+    token: rec.token,
+    expiresAt: rec.expiresAt,
+    updatedAt: typeof rec.updatedAt === "number" ? rec.updatedAt : 0,
+  };
+}
+
+async function writeCopilotTokenCache(
+  env: NodeJS.ProcessEnv,
+  payload: CachedCopilotToken,
+): Promise<void> {
+  const storage = await getS3dbStorage();
+  const key = resolveCopilotTokenCacheKey(env);
+  await storage.set(key, payload as unknown as Record<string, unknown>, { behavior: "body-only" });
 }
 
 function isTokenUsable(cache: CachedCopilotToken, now = Date.now()): boolean {
@@ -90,7 +124,7 @@ export async function resolveCopilotApiToken(params: {
 }> {
   const env = params.env ?? process.env;
   const cachePath = resolveCopilotTokenCachePath(env);
-  const cached = loadJsonFile(cachePath) as CachedCopilotToken | undefined;
+  const cached = await readCopilotTokenCache(env);
   if (cached && typeof cached.token === "string" && typeof cached.expiresAt === "number") {
     if (isTokenUsable(cached)) {
       return {
@@ -121,7 +155,7 @@ export async function resolveCopilotApiToken(params: {
     expiresAt: json.expiresAt,
     updatedAt: Date.now(),
   };
-  saveJsonFile(cachePath, payload);
+  await writeCopilotTokenCache(env, payload);
 
   return {
     token: payload.token,

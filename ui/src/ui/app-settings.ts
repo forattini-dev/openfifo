@@ -89,17 +89,12 @@ export function applySettingsFromUrl(host: SettingsHost) {
   const params = new URLSearchParams(url.search);
   const hashParams = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
 
-  const tokenRaw = params.get("token") ?? hashParams.get("token");
   const passwordRaw = params.get("password") ?? hashParams.get("password");
   const sessionRaw = params.get("session") ?? hashParams.get("session");
   const gatewayUrlRaw = params.get("gatewayUrl") ?? hashParams.get("gatewayUrl");
   let shouldCleanUrl = false;
 
-  if (tokenRaw != null) {
-    const token = tokenRaw.trim();
-    if (token && token !== host.settings.token) {
-      applySettings(host, { ...host.settings, token });
-    }
+  if (params.has("token") || hashParams.has("token")) {
     params.delete("token");
     hashParams.delete("token");
     shouldCleanUrl = true;

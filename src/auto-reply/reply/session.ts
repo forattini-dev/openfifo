@@ -26,6 +26,10 @@ import {
   type SessionScope,
   updateSessionStore,
 } from "../../config/sessions.js";
+import {
+  ensureSessionFileCached,
+  persistSessionFileToS3db,
+} from "../../persistence/session-files.js";
 import { normalizeMainKey } from "../../routing/session-key.js";
 import { normalizeSessionDeliveryFields } from "../../utils/delivery-context.js";
 import { resolveCommandAuthorization } from "../command-auth.js";
@@ -52,13 +56,16 @@ export type SessionInitResult = {
   triggerBodyNormalized: string;
 };
 
-function forkSessionFromParent(params: {
+async function forkSessionFromParent(params: {
   parentEntry: SessionEntry;
-}): { sessionId: string; sessionFile: string } | null {
+}): Promise<{ sessionId: string; sessionFile: string } | null> {
   const parentSessionFile = resolveSessionFilePath(
     params.parentEntry.sessionId,
     params.parentEntry,
   );
+  if (parentSessionFile) {
+    await ensureSessionFileCached(parentSessionFile);
+  }
   if (!parentSessionFile || !fs.existsSync(parentSessionFile)) {
     return null;
   }
@@ -84,7 +91,8 @@ function forkSessionFromParent(params: {
       cwd: manager.getCwd(),
       parentSession: parentSessionFile,
     };
-    fs.writeFileSync(sessionFile, `${JSON.stringify(header)}\n`, "utf-8");
+    await fs.promises.writeFile(sessionFile, `${JSON.stringify(header)}\n`, "utf-8");
+    await persistSessionFileToS3db(sessionFile);
     return { sessionId, sessionFile };
   } catch {
     return null;
@@ -317,7 +325,7 @@ export async function initSessionState(params: {
       `[session-init] forking from parent session: parentKey=${parentSessionKey} → sessionKey=${sessionKey} ` +
         `parentTokens=${sessionStore[parentSessionKey].totalTokens ?? "?"}`,
     );
-    const forked = forkSessionFromParent({
+    const forked = await forkSessionFromParent({
       parentEntry: sessionStore[parentSessionKey],
     });
     if (forked) {

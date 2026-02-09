@@ -139,9 +139,11 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
   }
   const authModeRaw = toOptionString(opts.auth);
   const authMode: GatewayAuthMode | null =
-    authModeRaw === "token" || authModeRaw === "password" ? authModeRaw : null;
+    authModeRaw === "token" || authModeRaw === "password" || authModeRaw === "proxy"
+      ? authModeRaw
+      : null;
   if (authModeRaw && !authMode) {
-    defaultRuntime.error('Invalid --auth (use "token" or "password")');
+    defaultRuntime.error('Invalid --auth (use "token", "password", or "proxy")');
     defaultRuntime.exit(1);
     return;
   }
@@ -207,7 +209,9 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
   const hasToken = typeof tokenValue === "string" && tokenValue.trim().length > 0;
   const hasPassword = typeof passwordValue === "string" && passwordValue.trim().length > 0;
   const hasSharedSecret =
-    (resolvedAuthMode === "token" && hasToken) || (resolvedAuthMode === "password" && hasPassword);
+    (resolvedAuthMode === "token" && hasToken) ||
+    (resolvedAuthMode === "password" && hasPassword) ||
+    resolvedAuthMode === "proxy";
   const authHints: string[] = [];
   if (miskeys.hasGatewayToken) {
     authHints.push('Found "gateway.token" in config. Use "gateway.auth.token" instead.');
@@ -247,7 +251,7 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
     defaultRuntime.error(
       [
         `Refusing to bind gateway to ${bind} without auth.`,
-        "Set gateway.auth.token/password (or OPENCLAW_GATEWAY_TOKEN/OPENCLAW_GATEWAY_PASSWORD) or pass --token/--password.",
+        "Set gateway.auth.password/token (or OPENCLAW_GATEWAY_PASSWORD/OPENCLAW_GATEWAY_TOKEN), configure proxy auth, or pass --password/--token.",
         ...authHints,
       ]
         .filter(Boolean)
@@ -319,7 +323,7 @@ export function addGatewayRunCommand(cmd: Command): Command {
       "--token <token>",
       "Shared token required in connect.params.auth.token (default: OPENCLAW_GATEWAY_TOKEN env if set)",
     )
-    .option("--auth <mode>", 'Gateway auth mode ("token"|"password")')
+    .option("--auth <mode>", 'Gateway auth mode ("token"|"password"|"proxy")')
     .option("--password <password>", "Password for auth mode=password")
     .option("--tailscale <mode>", 'Tailscale exposure mode ("off"|"serve"|"funnel")')
     .option(

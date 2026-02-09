@@ -29,14 +29,9 @@ describe("cron run log", () => {
       );
     }
 
-    const raw = await fs.readFile(logPath, "utf-8");
-    const lines = raw
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
-    expect(lines.length).toBe(3);
-    const last = JSON.parse(lines[2] ?? "{}") as { ts?: number };
-    expect(last.ts).toBe(1009);
+    const entries = await readCronRunLogEntries(logPath, { limit: 10 });
+    expect(entries.length).toBe(3);
+    expect(entries[2]?.ts).toBe(1009);
 
     await fs.rm(dir, { recursive: true, force: true });
   });

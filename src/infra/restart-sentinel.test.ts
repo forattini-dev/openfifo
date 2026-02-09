@@ -37,8 +37,8 @@ describe("restart sentinel", () => {
       sessionKey: "agent:main:whatsapp:dm:+15555550123",
       stats: { mode: "git" },
     };
-    const filePath = await writeRestartSentinel(payload);
-    expect(filePath).toBe(resolveRestartSentinelPath());
+    const key = await writeRestartSentinel(payload);
+    expect(key).toContain("plugin=openclaw");
 
     const read = await readRestartSentinel();
     expect(read?.payload.kind).toBe("update");

@@ -3,18 +3,27 @@ import { timingSafeEqual } from "node:crypto";
 import type { GatewayAuthConfig, GatewayTailscaleMode } from "../config/config.js";
 import { readTailscaleWhoisIdentity, type TailscaleWhoisIdentity } from "../infra/tailscale.js";
 import { isTrustedProxyAddress, parseForwardedForClientIp, resolveGatewayClientIp } from "./net.js";
-export type ResolvedGatewayAuthMode = "token" | "password";
+export type ResolvedGatewayAuthMode = "token" | "password" | "proxy";
+
+export type ResolvedGatewayAuthProxy = {
+  userHeader?: string;
+  emailHeader?: string;
+  nameHeader?: string;
+  roleHeader?: string;
+  scopesHeader?: string;
+};
 
 export type ResolvedGatewayAuth = {
   mode: ResolvedGatewayAuthMode;
   token?: string;
   password?: string;
   allowTailscale: boolean;
+  proxy?: ResolvedGatewayAuthProxy;
 };
 
 export type GatewayAuthResult = {
   ok: boolean;
-  method?: "token" | "password" | "tailscale" | "device-token";
+  method?: "token" | "password" | "proxy" | "tailscale" | "device-token";
   user?: string;
   reason?: string;
 };
@@ -31,6 +40,17 @@ type TailscaleUser = {
 };
 
 type TailscaleWhoisLookup = (ip: string) => Promise<TailscaleWhoisIdentity | null>;
+
+const DEFAULT_PROXY_USER_HEADERS = [
+  "x-auth-request-user",
+  "x-forwarded-user",
+  "x-authenticated-user",
+  "x-remote-user",
+  "x-auth-request-email",
+];
+const DEFAULT_PROXY_EMAIL_HEADERS = ["x-auth-request-email"];
+const DEFAULT_PROXY_NAME_HEADERS = ["x-auth-request-name", "x-forwarded-name"];
+const DEFAULT_PROXY_ROLE_HEADERS = ["x-auth-request-role", "x-forwarded-role"];
 
 function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) {
@@ -79,6 +99,38 @@ function getHostName(hostHeader?: string): string {
 
 function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function normalizeHeaderName(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function readHeader(req: IncomingMessage, headerName: string): string | undefined {
+  const key = normalizeHeaderName(headerName);
+  if (!key) {
+    return undefined;
+  }
+  const raw = req.headers[key];
+  const value = headerValue(raw);
+  return value?.trim() || undefined;
+}
+
+function resolveHeaderValue(
+  req: IncomingMessage,
+  primary: string | undefined,
+  fallbacks: string[],
+): string | undefined {
+  const fromPrimary = primary ? readHeader(req, primary) : undefined;
+  if (fromPrimary) {
+    return fromPrimary;
+  }
+  for (const header of fallbacks) {
+    const value = readHeader(req, header);
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 function resolveTailscaleClientIp(req?: IncomingMessage): string | undefined {
@@ -210,7 +262,13 @@ export function resolveGatewayAuth(params: {
     env.OPENCLAW_GATEWAY_PASSWORD ??
     env.CLAWDBOT_GATEWAY_PASSWORD ??
     undefined;
-  const mode: ResolvedGatewayAuth["mode"] = authConfig.mode ?? (password ? "password" : "token");
+  const hasProxyConfig =
+    authConfig.proxy &&
+    typeof authConfig.proxy === "object" &&
+    Object.values(authConfig.proxy).some((value) => typeof value === "string" && value.trim());
+  const mode: ResolvedGatewayAuth["mode"] =
+    authConfig.mode ??
+    (password ? "password" : token ? "token" : hasProxyConfig ? "proxy" : "token");
   const allowTailscale =
     authConfig.allowTailscale ?? (params.tailscaleMode === "serve" && mode !== "password");
   return {
@@ -218,6 +276,7 @@ export function resolveGatewayAuth(params: {
     token,
     password,
     allowTailscale,
+    proxy: authConfig.proxy ? { ...authConfig.proxy } : undefined,
   };
 }
 
@@ -232,6 +291,9 @@ export function assertGatewayAuthConfigured(auth: ResolvedGatewayAuth): void {
   }
   if (auth.mode === "password" && !auth.password) {
     throw new Error("gateway auth mode is password, but no password was configured");
+  }
+  if (auth.mode === "proxy" && auth.proxy === undefined) {
+    return;
   }
 }
 
@@ -258,6 +320,30 @@ export async function authorizeGatewayConnect(params: {
         user: tailscaleCheck.user.login,
       };
     }
+  }
+
+  if (auth.mode === "proxy") {
+    if (!req) {
+      return { ok: false, reason: "proxy_missing_request" };
+    }
+    const isTrustedProxy = isTrustedProxyAddress(req.socket?.remoteAddress, trustedProxies);
+    if (!isTrustedProxy) {
+      return { ok: false, reason: "proxy_untrusted" };
+    }
+    const proxy = auth.proxy ?? {};
+    const user = resolveHeaderValue(req, proxy.userHeader, DEFAULT_PROXY_USER_HEADERS);
+    if (!user) {
+      return { ok: false, reason: "proxy_user_missing" };
+    }
+    const email = resolveHeaderValue(req, proxy.emailHeader, DEFAULT_PROXY_EMAIL_HEADERS);
+    const name = resolveHeaderValue(req, proxy.nameHeader, DEFAULT_PROXY_NAME_HEADERS);
+    const role = resolveHeaderValue(req, proxy.roleHeader, DEFAULT_PROXY_ROLE_HEADERS);
+    const identityParts = [user, email, name, role].filter(Boolean);
+    return {
+      ok: true,
+      method: "proxy",
+      user: identityParts.length > 0 ? identityParts.join(" ") : user,
+    };
   }
 
   if (auth.mode === "token") {

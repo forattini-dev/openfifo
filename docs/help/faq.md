@@ -338,19 +338,18 @@ If you don't have a global install yet, run it via `pnpm openclaw onboard`.
 
 The wizard opens your browser with a clean (non-tokenized) dashboard URL right after onboarding and also prints the link in the summary. Keep that tab open; if it didn't launch, copy/paste the printed URL on the same machine.
 
-### How do I authenticate the dashboard token on localhost vs remote
+### How do I authenticate the dashboard on localhost vs remote
 
 **Localhost (same machine):**
 
 - Open `http://127.0.0.1:18789/`.
-- If it asks for auth, paste the token from `gateway.auth.token` (or `OPENCLAW_GATEWAY_TOKEN`) into Control UI settings.
-- Retrieve it from the gateway host: `openclaw config get gateway.auth.token` (or generate one: `openclaw doctor --generate-gateway-token`).
+- If it asks for auth, enter the password from `gateway.auth.password` (or `OPENCLAW_GATEWAY_PASSWORD`).
 
 **Not on localhost:**
 
-- **Tailscale Serve** (recommended): keep bind loopback, run `openclaw gateway --tailscale serve`, open `https://<magicdns>/`. If `gateway.auth.allowTailscale` is `true`, identity headers satisfy auth (no token).
-- **Tailnet bind**: run `openclaw gateway --bind tailnet --token "<token>"`, open `http://<tailscale-ip>:18789/`, paste token in dashboard settings.
-- **SSH tunnel**: `ssh -N -L 18789:127.0.0.1:18789 user@host` then open `http://127.0.0.1:18789/` and paste the token in Control UI settings.
+- **Tailscale Serve** (recommended): keep bind loopback, run `openclaw gateway --tailscale serve`, open `https://<magicdns>/`. If `gateway.auth.allowTailscale` is `true`, identity headers satisfy auth (no password).
+- **Tailnet bind**: run `openclaw gateway --bind tailnet --auth password --password "<password>"`, open `http://<tailscale-ip>:18789/`, enter the password.
+- **SSH tunnel**: `ssh -N -L 18789:127.0.0.1:18789 user@host` then open `http://127.0.0.1:18789/` and enter the password.
 
 See [Dashboard](/web/dashboard) and [Web surfaces](/web) for bind modes and auth details.
 
@@ -1353,15 +1352,15 @@ If the file is missing, it uses safe-ish defaults (including a default workspace
 
 ### I set gatewaybind lan or tailnet and now nothing listens the UI says unauthorized
 
-Non-loopback binds **require auth**. Configure `gateway.auth.mode` + `gateway.auth.token` (or use `OPENCLAW_GATEWAY_TOKEN`).
+Non-loopback binds **require auth**. Configure `gateway.auth.mode` + `gateway.auth.password` (or use `OPENCLAW_GATEWAY_PASSWORD`), or use proxy auth.
 
 ```json5
 {
   gateway: {
     bind: "lan",
     auth: {
-      mode: "token",
-      token: "replace-me",
+      mode: "password",
+      password: "replace-me",
     },
   },
 }
@@ -1370,13 +1369,13 @@ Non-loopback binds **require auth**. Configure `gateway.auth.mode` + `gateway.au
 Notes:
 
 - `gateway.remote.token` is for **remote CLI calls** only; it does not enable local gateway auth.
-- The Control UI authenticates via `connect.params.auth.token` (stored in app/UI settings). Avoid putting tokens in URLs.
+- The Control UI authenticates via `connect.params.auth.password` (kept in memory only). Avoid putting credentials in URLs.
 
-### Why do I need a token on localhost now
+### Why do I need a password on localhost now
 
-The wizard generates a gateway token by default (even on loopback) so **local WS clients must authenticate**. This blocks other local processes from calling the Gateway. Paste the token into the Control UI settings (or your client config) to connect.
+The wizard generates a gateway password by default (even on loopback) so **local WS clients must authenticate**. This blocks other local processes from calling the Gateway. Enter the password in the Control UI (or your client config) to connect.
 
-If you **really** want open loopback, remove `gateway.auth` from your config. Doctor can generate a token for you any time: `openclaw doctor --generate-gateway-token`.
+If you **really** want open loopback, remove `gateway.auth` from your config.
 
 ### Do I have to restart after changing config
 
@@ -1955,7 +1954,8 @@ Models are referenced as `provider/model` (example: `anthropic/claude-opus-4-6`)
 
 ### What model do you recommend
 
-**Recommended default:** `anthropic/claude-opus-4-6`.
+**Recommended default:** `anthropic/claude-haiku-4-5`.
+**Best quality:** `anthropic/claude-opus-4-6`.
 **Good alternative:** `anthropic/claude-sonnet-4-5`.
 **Reliable (less character):** `openai/gpt-5.2` - nearly as good as Opus, just less personality.
 **Budget:** `zai/glm-4.7`.
@@ -2137,6 +2137,7 @@ Yes. OpenClaw ships a few default shorthands (only applied when the model exists
 
 - `opus` → `anthropic/claude-opus-4-6`
 - `sonnet` → `anthropic/claude-sonnet-4-5`
+- `haiku` → `anthropic/claude-haiku-4-5`
 - `gpt` → `openai/gpt-5.2`
 - `gpt-mini` → `openai/gpt-5-mini`
 - `gemini` → `google/gemini-3-pro-preview`
@@ -2397,19 +2398,20 @@ Notes:
 
 ### The Control UI says unauthorized or keeps reconnecting What now
 
-Your gateway is running with auth enabled (`gateway.auth.*`), but the UI is not sending the matching token/password.
+Your gateway is running with auth enabled (`gateway.auth.*`), but the UI is not sending the matching password (or proxy headers).
 
 Facts (from code):
 
-- The Control UI stores the token in browser localStorage key `openclaw.control.settings.v1`.
+- The Control UI stores the gateway URL in browser localStorage key `openclaw.control.settings.v1`.
+- Passwords are kept in memory only (not persisted).
 
 Fix:
 
 - Fastest: `openclaw dashboard` (prints + copies the dashboard URL, tries to open; shows SSH hint if headless).
-- If you don't have a token yet: `openclaw doctor --generate-gateway-token`.
 - If remote, tunnel first: `ssh -N -L 18789:127.0.0.1:18789 user@host` then open `http://127.0.0.1:18789/`.
-- Set `gateway.auth.token` (or `OPENCLAW_GATEWAY_TOKEN`) on the gateway host.
-- In the Control UI settings, paste the same token.
+- Set `gateway.auth.password` (or `OPENCLAW_GATEWAY_PASSWORD`) on the gateway host.
+- In the Control UI, enter the same password when prompted.
+- If you use proxy auth, ensure `gateway.trustedProxies` is set and the proxy injects the configured headers.
 - Still stuck? Run `openclaw status --all` and follow [Troubleshooting](/gateway/troubleshooting). See [Dashboard](/web/dashboard) for auth details.
 
 ### I set gatewaybind tailnet but it cant bind nothing listens

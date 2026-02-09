@@ -131,8 +131,14 @@ const FIELD_LABELS: Record<string, string> = {
   "gateway.remote.token": "Remote Gateway Token",
   "gateway.remote.password": "Remote Gateway Password",
   "gateway.remote.tlsFingerprint": "Remote Gateway TLS Fingerprint",
+  "gateway.auth.mode": "Gateway Auth Mode",
   "gateway.auth.token": "Gateway Token",
   "gateway.auth.password": "Gateway Password",
+  "gateway.auth.proxy.userHeader": "Gateway Proxy User Header",
+  "gateway.auth.proxy.emailHeader": "Gateway Proxy Email Header",
+  "gateway.auth.proxy.nameHeader": "Gateway Proxy Name Header",
+  "gateway.auth.proxy.roleHeader": "Gateway Proxy Role Header",
+  "gateway.auth.proxy.scopesHeader": "Gateway Proxy Scopes Header",
   "tools.media.image.enabled": "Enable Image Understanding",
   "tools.media.image.maxBytes": "Image Understanding Max Bytes",
   "tools.media.image.maxChars": "Image Understanding Max Chars",
@@ -195,6 +201,7 @@ const FIELD_LABELS: Record<string, string> = {
   "tools.web.search.timeoutSeconds": "Web Search Timeout (sec)",
   "tools.web.search.cacheTtlMinutes": "Web Search Cache TTL (min)",
   "tools.web.fetch.enabled": "Enable Web Fetch Tool",
+  "tools.web.fetch.client": "Web Fetch Client",
   "tools.web.fetch.maxChars": "Web Fetch Max Chars",
   "tools.web.fetch.timeoutSeconds": "Web Fetch Timeout (sec)",
   "tools.web.fetch.cacheTtlMinutes": "Web Fetch Cache TTL (min)",
@@ -415,9 +422,18 @@ const FIELD_HELP: Record<string, string> = {
     "Avatar image path (relative to the agent workspace only) or a remote URL/data URL.",
   "discovery.mdns.mode":
     'mDNS broadcast mode ("minimal" default, "full" includes cliPath/sshPort, "off" disables mDNS).',
+  "gateway.auth.mode":
+    'Gateway auth mode ("token", "password", or "proxy"). Use "proxy" for OAuth2/SSO reverse proxies.',
   "gateway.auth.token":
     "Required by default for gateway access (unless using Tailscale Serve identity); required for non-loopback binds.",
   "gateway.auth.password": "Required for Tailscale funnel.",
+  "gateway.auth.proxy.userHeader":
+    "Header containing the authenticated user when gateway.auth.mode=proxy (default: x-auth-request-user).",
+  "gateway.auth.proxy.emailHeader":
+    "Optional header with authenticated user email (for logs/metadata).",
+  "gateway.auth.proxy.nameHeader": "Optional header with authenticated display name.",
+  "gateway.auth.proxy.roleHeader": "Optional header with authenticated role.",
+  "gateway.auth.proxy.scopesHeader": "Optional header with scopes (comma/space separated).",
   "gateway.controlUi.basePath":
     "Optional URL prefix where the Control UI is served (e.g. /openclaw).",
   "gateway.controlUi.root":
@@ -425,7 +441,7 @@ const FIELD_HELP: Record<string, string> = {
   "gateway.controlUi.allowedOrigins":
     "Allowed browser origins for Control UI/WebChat websocket connections (full origins only, e.g. https://control.example.com).",
   "gateway.controlUi.allowInsecureAuth":
-    "Allow Control UI auth over insecure HTTP (token-only; not recommended).",
+    "Allow Control UI auth over insecure HTTP (password-only; not recommended).",
   "gateway.controlUi.dangerouslyDisableDeviceAuth":
     "DANGEROUS. Disable Control UI device identity checks (token/password only).",
   "gateway.http.endpoints.chatCompletions.enabled":
@@ -487,6 +503,7 @@ const FIELD_HELP: Record<string, string> = {
   "tools.web.search.perplexity.model":
     'Perplexity model override (default: "perplexity/sonar-pro").',
   "tools.web.fetch.enabled": "Enable the web_fetch tool (lightweight HTTP fetch).",
+  "tools.web.fetch.client": 'HTTP client for web_fetch ("recker" default, or "fetch").',
   "tools.web.fetch.maxChars": "Max characters returned by web_fetch (truncated).",
   "tools.web.fetch.maxCharsCap":
     "Hard cap for web_fetch maxChars (applies to config and tool calls).",

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { ensureSessionFileCached, persistSessionFileToS3db } from "../persistence/session-files.js";
 
 type RepairReport = {
   repaired: boolean;
@@ -27,6 +28,7 @@ export async function repairSessionFileIfNeeded(params: {
 
   let content: string;
   try {
+    await ensureSessionFileCached(sessionFile);
     content = await fs.readFile(sessionFile, "utf-8");
   } catch (err) {
     const code = (err as { code?: unknown } | undefined)?.code;
@@ -105,5 +107,6 @@ export async function repairSessionFileIfNeeded(params: {
       sessionFile,
     )})`,
   );
+  await persistSessionFileToS3db(sessionFile);
   return { repaired: true, droppedLines, backupPath };
 }

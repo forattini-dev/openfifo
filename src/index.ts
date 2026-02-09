@@ -30,12 +30,14 @@ import {
 import { assertSupportedRuntime } from "./infra/runtime-guard.js";
 import { installUnhandledRejectionHandler } from "./infra/unhandled-rejections.js";
 import { enableConsoleCapture } from "./logging.js";
+import { initS3dbPersistence } from "./persistence/init.js";
 import { runCommandWithTimeout, runExec } from "./process/exec.js";
 import { assertWebChannel, normalizeE164, toWhatsappJid } from "./utils.js";
 
 loadDotEnv({ quiet: true });
 normalizeEnv();
 ensureOpenClawCliOnPath();
+await initS3dbPersistence();
 
 // Capture all console output into structured logs while keeping stdout/stderr behavior.
 enableConsoleCapture();

@@ -1,10 +1,11 @@
-import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
+import { buildS3dbKey, getS3dbStorage } from "../persistence/s3db.js";
 
 const STORE_VERSION = 1;
+const TELEGRAM_OFFSET_NAMESPACE = "telegram/update-offset";
 
 type TelegramUpdateOffsetState = {
   version: number;
@@ -28,6 +29,10 @@ function resolveTelegramUpdateOffsetPath(
   return path.join(stateDir, "telegram", `update-offset-${normalized}.json`);
 }
 
+function resolveTelegramUpdateOffsetKey(accountId?: string): string {
+  return buildS3dbKey(TELEGRAM_OFFSET_NAMESPACE, normalizeAccountId(accountId));
+}
+
 function safeParseState(raw: string): TelegramUpdateOffsetState | null {
   try {
     const parsed = JSON.parse(raw) as TelegramUpdateOffsetState;
@@ -47,16 +52,27 @@ export async function readTelegramUpdateOffset(params: {
   accountId?: string;
   env?: NodeJS.ProcessEnv;
 }): Promise<number | null> {
+  const storage = await getS3dbStorage();
+  const key = resolveTelegramUpdateOffsetKey(params.accountId);
+  const raw = await storage.get(key);
+  if (raw && typeof raw === "object") {
+    const record = raw as TelegramUpdateOffsetState;
+    if (record?.version === STORE_VERSION) {
+      return typeof record.lastUpdateId === "number" ? record.lastUpdateId : null;
+    }
+  }
+
   const filePath = resolveTelegramUpdateOffsetPath(params.accountId, params.env);
   try {
-    const raw = await fs.readFile(filePath, "utf-8");
-    const parsed = safeParseState(raw);
-    return parsed?.lastUpdateId ?? null;
-  } catch (err) {
-    const code = (err as { code?: string }).code;
-    if (code === "ENOENT") {
+    const rawFile = await fs.readFile(filePath, "utf-8");
+    const parsed = safeParseState(rawFile);
+    if (!parsed) {
       return null;
     }
+    await storage.set(key, parsed as unknown as Record<string, unknown>, { behavior: "body-only" });
+    await fs.rm(filePath, { force: true });
+    return parsed.lastUpdateId ?? null;
+  } catch {
     return null;
   }
 }
@@ -66,17 +82,12 @@ export async function writeTelegramUpdateOffset(params: {
   updateId: number;
   env?: NodeJS.ProcessEnv;
 }): Promise<void> {
-  const filePath = resolveTelegramUpdateOffsetPath(params.accountId, params.env);
-  const dir = path.dirname(filePath);
-  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-  const tmp = path.join(dir, `${path.basename(filePath)}.${crypto.randomUUID()}.tmp`);
   const payload: TelegramUpdateOffsetState = {
     version: STORE_VERSION,
     lastUpdateId: params.updateId,
   };
-  await fs.writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, {
-    encoding: "utf-8",
-  });
-  await fs.chmod(tmp, 0o600);
-  await fs.rename(tmp, filePath);
+  const storage = await getS3dbStorage();
+  const key = resolveTelegramUpdateOffsetKey(params.accountId);
+  await storage.set(key, payload as unknown as Record<string, unknown>, { behavior: "body-only" });
+  void params.env;
 }

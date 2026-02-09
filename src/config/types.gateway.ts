@@ -70,13 +70,26 @@ export type GatewayControlUiConfig = {
   root?: string;
   /** Allowed browser origins for Control UI/WebChat websocket connections. */
   allowedOrigins?: string[];
-  /** Allow token-only auth over insecure HTTP (default: false). */
+  /** Allow password-only auth over insecure HTTP (default: false). */
   allowInsecureAuth?: boolean;
   /** DANGEROUS: Disable device identity checks for the Control UI (default: false). */
   dangerouslyDisableDeviceAuth?: boolean;
 };
 
-export type GatewayAuthMode = "token" | "password";
+export type GatewayAuthMode = "token" | "password" | "proxy";
+
+export type GatewayAuthProxyConfig = {
+  /** Header that contains the authenticated user identifier (default: x-auth-request-user). */
+  userHeader?: string;
+  /** Optional header containing user email (for logs/metadata). */
+  emailHeader?: string;
+  /** Optional header containing a display name (for logs/metadata). */
+  nameHeader?: string;
+  /** Optional header containing role information. */
+  roleHeader?: string;
+  /** Optional header containing scopes (comma/space separated). */
+  scopesHeader?: string;
+};
 
 export type GatewayAuthConfig = {
   /** Authentication mode for Gateway connections. Defaults to token when set. */
@@ -87,6 +100,8 @@ export type GatewayAuthConfig = {
   password?: string;
   /** Allow Tailscale identity headers when serve mode is enabled. */
   allowTailscale?: boolean;
+  /** Proxy auth headers for OAuth2/SSO gateways. */
+  proxy?: GatewayAuthProxyConfig;
 };
 
 export type GatewayTailscaleMode = "off" | "serve" | "funnel";

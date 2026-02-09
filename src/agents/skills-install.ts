@@ -25,6 +25,7 @@ export type SkillInstallRequest = {
   installId: string;
   timeoutMs?: number;
   config?: OpenClawConfig;
+  allowUnsafe?: boolean;
 };
 
 export type SkillInstallResult = {
@@ -34,6 +35,7 @@ export type SkillInstallResult = {
   stderr: string;
   code: number | null;
   warnings?: string[];
+  requiresConfirmation?: boolean;
 };
 
 function isNodeReadableStream(value: unknown): value is NodeJS.ReadableStream {
@@ -101,14 +103,18 @@ function formatScanFindingDetail(
   return `${finding.message} (${filePath}:${finding.line})`;
 }
 
-async function collectSkillInstallScanWarnings(entry: SkillEntry): Promise<string[]> {
+async function collectSkillInstallScanWarnings(
+  entry: SkillEntry,
+): Promise<{ warnings: string[]; requiresConfirmation: boolean }> {
   const warnings: string[] = [];
+  let requiresConfirmation = false;
   const skillName = entry.skill.name;
   const skillDir = path.resolve(entry.skill.baseDir);
 
   try {
     const summary = await scanDirectoryWithSummary(skillDir);
     if (summary.critical > 0) {
+      requiresConfirmation = true;
       const criticalDetails = summary.findings
         .filter((finding) => finding.severity === "critical")
         .map((finding) => formatScanFindingDetail(skillDir, finding))
@@ -117,17 +123,19 @@ async function collectSkillInstallScanWarnings(entry: SkillEntry): Promise<strin
         `WARNING: Skill "${skillName}" contains dangerous code patterns: ${criticalDetails}`,
       );
     } else if (summary.warn > 0) {
+      requiresConfirmation = true;
       warnings.push(
         `Skill "${skillName}" has ${summary.warn} suspicious code pattern(s). Run "openclaw security audit --deep" for details.`,
       );
     }
   } catch (err) {
+    requiresConfirmation = true;
     warnings.push(
-      `Skill "${skillName}" code safety scan failed (${String(err)}). Installation continues; run "openclaw security audit --deep" after install.`,
+      `Skill "${skillName}" code safety scan failed (${String(err)}). Review before continuing.`,
     );
   }
 
-  return warnings;
+  return { warnings, requiresConfirmation };
 }
 
 function resolveInstallId(spec: SkillInstallSpec, index: number): string {
@@ -409,7 +417,8 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
   }
 
   const spec = findInstallSpec(entry, params.installId);
-  const warnings = await collectSkillInstallScanWarnings(entry);
+  const scan = await collectSkillInstallScanWarnings(entry);
+  const warnings = scan.warnings;
   if (!spec) {
     return withWarnings(
       {
@@ -418,6 +427,21 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
         stdout: "",
         stderr: "",
         code: null,
+        requiresConfirmation: scan.requiresConfirmation,
+      },
+      warnings,
+    );
+  }
+  if (scan.requiresConfirmation && !params.allowUnsafe) {
+    return withWarnings(
+      {
+        ok: false,
+        message:
+          "Skill install paused: suspicious patterns detected. Confirm installation to continue.",
+        stdout: "",
+        stderr: "",
+        code: null,
+        requiresConfirmation: true,
       },
       warnings,
     );

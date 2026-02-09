@@ -1223,7 +1223,7 @@
 .chat-msg {
   display: grid;
   gap: 6px;
-  max-width: min(700px, 82%);
+  max-width: min(900px, 92%);
 }
 
 .chat-line.user .chat-msg {
@@ -1340,8 +1340,9 @@
 
 /* Chat text */
 .chat-text {
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: auto;
   color: var(--chat-text);
   line-height: 1.5;
 }
@@ -1392,6 +1393,8 @@
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--secondary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 :root[data-theme="light"] .chat-text :where(:not(pre) > code) {

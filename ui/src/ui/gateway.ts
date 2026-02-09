@@ -136,7 +136,7 @@ export class GatewayBrowserClient {
     }
 
     // crypto.subtle is only available in secure contexts (HTTPS, localhost).
-    // Over plain HTTP, we skip device identity and fall back to token-only auth.
+    // Over plain HTTP, we skip device identity and fall back to shared-secret auth.
     // Gateways may reject this unless gateway.controlUi.allowInsecureAuth is enabled.
     const isSecureContext = typeof crypto !== "undefined" && !!crypto.subtle;
 

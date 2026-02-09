@@ -1,8 +1,9 @@
 import { Type } from "@sinclair/typebox";
+import { get as reckerGet } from "recker";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { AnyAgentTool } from "./common.js";
 import { fetchWithSsrFGuard } from "../../infra/net/fetch-guard.js";
-import { SsrFBlockedError } from "../../infra/net/ssrf.js";
+import { SsrFBlockedError, resolvePinnedHostname } from "../../infra/net/ssrf.js";
 import { wrapExternalContent, wrapWebContent } from "../../security/external-content.js";
 import { stringEnum } from "../schema/typebox.js";
 import { jsonResult, readNumberParam, readStringParam } from "./common.js";
@@ -81,11 +82,24 @@ function resolveFetchConfig(cfg?: OpenClawConfig): WebFetchConfig {
   return fetch as WebFetchConfig;
 }
 
+type FetchClient = "fetch" | "recker";
+
 function resolveFetchEnabled(params: { fetch?: WebFetchConfig; sandboxed?: boolean }): boolean {
   if (typeof params.fetch?.enabled === "boolean") {
     return params.fetch.enabled;
   }
   return true;
+}
+
+function resolveFetchClient(fetch?: WebFetchConfig): FetchClient {
+  if (!fetch || typeof fetch !== "object") {
+    return "recker";
+  }
+  const raw = "client" in fetch ? fetch.client : undefined;
+  if (raw === "fetch" || raw === "recker") {
+    return raw;
+  }
+  return "recker";
 }
 
 function resolveFetchReadabilityEnabled(fetch?: WebFetchConfig): boolean {
@@ -369,6 +383,7 @@ async function runWebFetch(params: {
   timeoutSeconds: number;
   cacheTtlMs: number;
   userAgent: string;
+  fetchClient: FetchClient;
   readabilityEnabled: boolean;
   firecrawlEnabled: boolean;
   firecrawlApiKey?: string;
@@ -402,21 +417,54 @@ async function runWebFetch(params: {
   let release: (() => Promise<void>) | null = null;
   let finalUrl = params.url;
   try {
-    const result = await fetchWithSsrFGuard({
-      url: params.url,
-      maxRedirects: params.maxRedirects,
-      timeoutMs: params.timeoutSeconds * 1000,
-      init: {
+    if (params.fetchClient === "recker") {
+      const assertSafeUrl = async (rawUrl: string) => {
+        let url: URL;
+        try {
+          url = new URL(rawUrl);
+        } catch {
+          throw new Error("Invalid URL: must be http or https");
+        }
+        if (!["http:", "https:"].includes(url.protocol)) {
+          throw new Error("Invalid URL: must be http or https");
+        }
+        await resolvePinnedHostname(url.hostname);
+      };
+
+      await assertSafeUrl(params.url);
+      const reckerResponse = await reckerGet(params.url, {
         headers: {
           Accept: "*/*",
           "User-Agent": params.userAgent,
           "Accept-Language": "en-US,en;q=0.9",
         },
-      },
-    });
-    res = result.response;
-    finalUrl = result.finalUrl;
-    release = result.release;
+        timeout: params.timeoutSeconds * 1000,
+        followRedirects: true,
+        maxRedirects: params.maxRedirects,
+        throwHttpErrors: false,
+        beforeRedirect: async (info) => {
+          await assertSafeUrl(info.to);
+        },
+      });
+      res = reckerResponse.raw;
+      finalUrl = reckerResponse.url || finalUrl;
+    } else {
+      const result = await fetchWithSsrFGuard({
+        url: params.url,
+        maxRedirects: params.maxRedirects,
+        timeoutMs: params.timeoutSeconds * 1000,
+        init: {
+          headers: {
+            Accept: "*/*",
+            "User-Agent": params.userAgent,
+            "Accept-Language": "en-US,en;q=0.9",
+          },
+        },
+      });
+      res = result.response;
+      finalUrl = result.finalUrl;
+      release = result.release;
+    }
   } catch (error) {
     if (error instanceof SsrFBlockedError) {
       throw error;
@@ -645,6 +693,7 @@ export function createWebFetchTool(options?: {
     firecrawl?.timeoutSeconds ?? fetch?.timeoutSeconds,
     DEFAULT_TIMEOUT_SECONDS,
   );
+  const fetchClient = resolveFetchClient(fetch);
   const userAgent =
     (fetch && "userAgent" in fetch && typeof fetch.userAgent === "string" && fetch.userAgent) ||
     DEFAULT_FETCH_USER_AGENT;
@@ -672,6 +721,7 @@ export function createWebFetchTool(options?: {
         timeoutSeconds: resolveTimeoutSeconds(fetch?.timeoutSeconds, DEFAULT_TIMEOUT_SECONDS),
         cacheTtlMs: resolveCacheTtlMs(fetch?.cacheTtlMinutes, DEFAULT_CACHE_TTL_MINUTES),
         userAgent,
+        fetchClient,
         readabilityEnabled,
         firecrawlEnabled,
         firecrawlApiKey,

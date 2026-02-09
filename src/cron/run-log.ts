@@ -1,5 +1,7 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { buildS3dbKey, getS3dbStorage } from "../persistence/s3db.js";
 
 export type CronRunLogEntry = {
   ts: number;
@@ -21,59 +23,57 @@ export function resolveCronRunLogPath(params: { storePath: string; jobId: string
   return path.join(dir, "runs", `${params.jobId}.jsonl`);
 }
 
-const writesByPath = new Map<string, Promise<void>>();
+const CRON_RUN_LOG_NAMESPACE = "cron/run-log";
+const CRON_RUN_LOG_LOCK_PREFIX = "cron-run-log";
 
-async function pruneIfNeeded(filePath: string, opts: { maxBytes: number; keepLines: number }) {
-  const stat = await fs.stat(filePath).catch(() => null);
-  if (!stat || stat.size <= opts.maxBytes) {
-    return;
+type CronRunLogEnvelope = {
+  version: 1;
+  entries: CronRunLogEntry[];
+};
+
+function resolveCronRunLogKey(filePath: string): string {
+  return buildS3dbKey(CRON_RUN_LOG_NAMESPACE, filePath);
+}
+
+function resolveCronRunLogLockName(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/");
+  const hash = crypto.createHash("sha256").update(normalized).digest("hex").slice(0, 16);
+  return `${CRON_RUN_LOG_LOCK_PREFIX}:${hash}`;
+}
+
+function coerceCronRunLogEnvelope(raw: unknown): CronRunLogEnvelope | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
   }
-
-  const raw = await fs.readFile(filePath, "utf-8").catch(() => "");
-  const lines = raw
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
-  const kept = lines.slice(Math.max(0, lines.length - opts.keepLines));
-  const tmp = `${filePath}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
-  await fs.writeFile(tmp, `${kept.join("\n")}\n`, "utf-8");
-  await fs.rename(tmp, filePath);
+  const record = raw as Record<string, unknown>;
+  const entries = Array.isArray(record.entries) ? (record.entries as CronRunLogEntry[]) : [];
+  return { version: 1, entries };
 }
 
-export async function appendCronRunLog(
-  filePath: string,
-  entry: CronRunLogEntry,
-  opts?: { maxBytes?: number; keepLines?: number },
-) {
-  const resolved = path.resolve(filePath);
-  const prev = writesByPath.get(resolved) ?? Promise.resolve();
-  const next = prev
-    .catch(() => undefined)
-    .then(async () => {
-      await fs.mkdir(path.dirname(resolved), { recursive: true });
-      await fs.appendFile(resolved, `${JSON.stringify(entry)}\n`, "utf-8");
-      await pruneIfNeeded(resolved, {
-        maxBytes: opts?.maxBytes ?? 2_000_000,
-        keepLines: opts?.keepLines ?? 2_000,
-      });
-    });
-  writesByPath.set(resolved, next);
-  await next;
+function pruneEntries(entries: CronRunLogEntry[], opts: { maxBytes: number; keepLines: number }) {
+  let pruned = entries.slice();
+  if (opts.keepLines > 0 && pruned.length > opts.keepLines) {
+    pruned = pruned.slice(-opts.keepLines);
+  }
+  if (opts.maxBytes > 0) {
+    const estimateLine = (entry: CronRunLogEntry) => JSON.stringify(entry).length + 1;
+    let total = pruned.reduce((acc, entry) => acc + estimateLine(entry), 0);
+    while (total > opts.maxBytes && pruned.length > 1) {
+      total -= estimateLine(pruned[0]);
+      pruned = pruned.slice(1);
+    }
+  }
+  return pruned;
 }
 
-export async function readCronRunLogEntries(
-  filePath: string,
-  opts?: { limit?: number; jobId?: string },
-): Promise<CronRunLogEntry[]> {
-  const limit = Math.max(1, Math.min(5000, Math.floor(opts?.limit ?? 200)));
-  const jobId = opts?.jobId?.trim() || undefined;
+async function readLegacyCronRunLog(filePath: string): Promise<CronRunLogEntry[]> {
   const raw = await fs.readFile(path.resolve(filePath), "utf-8").catch(() => "");
   if (!raw.trim()) {
     return [];
   }
   const parsed: CronRunLogEntry[] = [];
   const lines = raw.split("\n");
-  for (let i = lines.length - 1; i >= 0 && parsed.length < limit; i--) {
+  for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]?.trim();
     if (!line) {
       continue;
@@ -90,9 +90,6 @@ export async function readCronRunLogEntries(
         continue;
       }
       if (typeof obj.ts !== "number" || !Number.isFinite(obj.ts)) {
-        continue;
-      }
-      if (jobId && obj.jobId !== jobId) {
         continue;
       }
       const entry: CronRunLogEntry = {
@@ -118,4 +115,63 @@ export async function readCronRunLogEntries(
     }
   }
   return parsed.toReversed();
+}
+
+export async function appendCronRunLog(
+  filePath: string,
+  entry: CronRunLogEntry,
+  opts?: { maxBytes?: number; keepLines?: number },
+) {
+  const resolved = path.resolve(filePath);
+  const storage = await getS3dbStorage();
+  const key = resolveCronRunLogKey(resolved);
+  const lockName = resolveCronRunLogLockName(resolved);
+  const lock = await storage.acquireLock(lockName, { timeout: 10_000, ttl: 30 });
+  if (!lock) {
+    throw new Error(`timeout acquiring cron run log lock: ${lockName}`);
+  }
+  try {
+    const raw = await storage.get(key);
+    const envelope = coerceCronRunLogEnvelope(raw);
+    const existing = envelope?.entries ?? [];
+    const next = pruneEntries([...existing, entry], {
+      maxBytes: opts?.maxBytes ?? 2_000_000,
+      keepLines: opts?.keepLines ?? 2_000,
+    });
+    await storage.set(key, { version: 1, entries: next } satisfies CronRunLogEnvelope, {
+      behavior: "body-only",
+    });
+  } finally {
+    await storage.releaseLock(lock);
+  }
+}
+
+export async function readCronRunLogEntries(
+  filePath: string,
+  opts?: { limit?: number; jobId?: string },
+): Promise<CronRunLogEntry[]> {
+  const limit = Math.max(1, Math.min(5000, Math.floor(opts?.limit ?? 200)));
+  const jobId = opts?.jobId?.trim() || undefined;
+  const resolved = path.resolve(filePath);
+  const storage = await getS3dbStorage();
+  const key = resolveCronRunLogKey(resolved);
+  let raw = await storage.get(key);
+  let envelope = coerceCronRunLogEnvelope(raw);
+  if (!envelope) {
+    const legacyEntries = await readLegacyCronRunLog(resolved);
+    if (legacyEntries.length > 0) {
+      envelope = { version: 1, entries: legacyEntries };
+      await storage.set(key, envelope as unknown as Record<string, unknown>, {
+        behavior: "body-only",
+      });
+      try {
+        await fs.rm(resolved, { force: true });
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
+  const entries = envelope?.entries ?? [];
+  const filtered = jobId ? entries.filter((entry) => entry.jobId === jobId) : entries;
+  return filtered.slice(Math.max(0, filtered.length - limit));
 }

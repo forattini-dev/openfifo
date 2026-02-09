@@ -1,6 +1,10 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { TextContent } from "@mariozechner/pi-ai";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
+import {
+  ensureSessionFileCached,
+  persistSessionFileToS3db,
+} from "../../persistence/session-files.js";
 import { log } from "./logger.js";
 
 /**
@@ -145,6 +149,7 @@ export async function truncateOversizedToolResultsInSession(params: {
   const maxChars = calculateMaxToolResultChars(contextWindowTokens);
 
   try {
+    await ensureSessionFileCached(sessionFile);
     const sessionManager = SessionManager.open(sessionFile);
     const branch = sessionManager.getBranch();
 
@@ -254,6 +259,7 @@ export async function truncateOversizedToolResultsInSession(params: {
         `sessionKey=${params.sessionKey ?? params.sessionId ?? "unknown"}`,
     );
 
+    await persistSessionFileToS3db(sessionFile);
     return { truncated: true, truncatedCount };
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);

@@ -1,6 +1,7 @@
-import fs from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
+import { buildS3dbKey, getS3dbStorage } from "../persistence/s3db.js";
 
 export type DeviceAuthEntry = {
   token: string;
@@ -16,9 +17,14 @@ type DeviceAuthStore = {
 };
 
 const DEVICE_AUTH_FILE = "device-auth.json";
+const DEVICE_AUTH_NAMESPACE = "device-auth";
 
 function resolveDeviceAuthPath(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(resolveStateDir(env), "identity", DEVICE_AUTH_FILE);
+}
+
+function resolveDeviceAuthKey(deviceId: string): string {
+  return buildS3dbKey(DEVICE_AUTH_NAMESPACE, deviceId);
 }
 
 function normalizeRole(role: string): string {
@@ -39,12 +45,9 @@ function normalizeScopes(scopes: string[] | undefined): string[] {
   return [...out].toSorted();
 }
 
-function readStore(filePath: string): DeviceAuthStore | null {
+async function readLegacyStore(filePath: string): Promise<DeviceAuthStore | null> {
   try {
-    if (!fs.existsSync(filePath)) {
-      return null;
-    }
-    const raw = fs.readFileSync(filePath, "utf8");
+    const raw = await fs.readFile(filePath, "utf8");
     const parsed = JSON.parse(raw) as DeviceAuthStore;
     if (parsed?.version !== 1 || typeof parsed.deviceId !== "string") {
       return null;
@@ -58,23 +61,42 @@ function readStore(filePath: string): DeviceAuthStore | null {
   }
 }
 
-function writeStore(filePath: string, store: DeviceAuthStore): void {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(store, null, 2)}\n`, { mode: 0o600 });
-  try {
-    fs.chmodSync(filePath, 0o600);
-  } catch {
-    // best-effort
+async function readStore(
+  deviceId: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<DeviceAuthStore | null> {
+  const storage = await getS3dbStorage();
+  const key = resolveDeviceAuthKey(deviceId);
+  const raw = await storage.get(key);
+  if (raw && typeof raw === "object") {
+    const parsed = raw as DeviceAuthStore;
+    if (parsed?.version === 1 && parsed.deviceId === deviceId && parsed.tokens) {
+      return parsed;
+    }
   }
+
+  const legacyPath = resolveDeviceAuthPath(env);
+  const legacy = await readLegacyStore(legacyPath);
+  if (legacy && legacy.deviceId === deviceId) {
+    await storage.set(key, legacy as unknown as Record<string, unknown>, { behavior: "body-only" });
+    await fs.rm(legacyPath, { force: true });
+    return legacy;
+  }
+  return null;
 }
 
-export function loadDeviceAuthToken(params: {
+async function writeStore(deviceId: string, store: DeviceAuthStore): Promise<void> {
+  const storage = await getS3dbStorage();
+  const key = resolveDeviceAuthKey(deviceId);
+  await storage.set(key, store as unknown as Record<string, unknown>, { behavior: "body-only" });
+}
+
+export async function loadDeviceAuthToken(params: {
   deviceId: string;
   role: string;
   env?: NodeJS.ProcessEnv;
-}): DeviceAuthEntry | null {
-  const filePath = resolveDeviceAuthPath(params.env);
-  const store = readStore(filePath);
+}): Promise<DeviceAuthEntry | null> {
+  const store = await readStore(params.deviceId, params.env);
   if (!store) {
     return null;
   }
@@ -89,15 +111,14 @@ export function loadDeviceAuthToken(params: {
   return entry;
 }
 
-export function storeDeviceAuthToken(params: {
+export async function storeDeviceAuthToken(params: {
   deviceId: string;
   role: string;
   token: string;
   scopes?: string[];
   env?: NodeJS.ProcessEnv;
-}): DeviceAuthEntry {
-  const filePath = resolveDeviceAuthPath(params.env);
-  const existing = readStore(filePath);
+}): Promise<DeviceAuthEntry> {
+  const existing = await readStore(params.deviceId, params.env);
   const role = normalizeRole(params.role);
   const next: DeviceAuthStore = {
     version: 1,
@@ -114,17 +135,16 @@ export function storeDeviceAuthToken(params: {
     updatedAtMs: Date.now(),
   };
   next.tokens[role] = entry;
-  writeStore(filePath, next);
+  await writeStore(params.deviceId, next);
   return entry;
 }
 
-export function clearDeviceAuthToken(params: {
+export async function clearDeviceAuthToken(params: {
   deviceId: string;
   role: string;
   env?: NodeJS.ProcessEnv;
-}): void {
-  const filePath = resolveDeviceAuthPath(params.env);
-  const store = readStore(filePath);
+}): Promise<void> {
+  const store = await readStore(params.deviceId, params.env);
   if (!store || store.deviceId !== params.deviceId) {
     return;
   }
@@ -138,5 +158,5 @@ export function clearDeviceAuthToken(params: {
     tokens: { ...store.tokens },
   };
   delete next.tokens[role];
-  writeStore(filePath, next);
+  await writeStore(params.deviceId, next);
 }

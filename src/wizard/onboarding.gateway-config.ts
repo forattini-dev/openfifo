@@ -112,13 +112,17 @@ export async function configureGatewayForOnboarding(
           message: "Gateway auth",
           options: [
             {
+              value: "password",
+              label: "Password",
+              hint: "Recommended for the Control UI",
+            },
+            {
               value: "token",
               label: "Token",
-              hint: "Recommended default (local + remote)",
+              hint: "For non-browser clients only",
             },
-            { value: "password", label: "Password" },
           ],
-          initialValue: "token",
+          initialValue: "password",
         })) as GatewayAuthChoice);
 
   const tailscaleMode: GatewayWizardSettings["tailscaleMode"] =
@@ -203,13 +207,15 @@ export async function configureGatewayForOnboarding(
   }
 
   if (authMode === "password") {
-    const password =
+    const passwordInput =
       flow === "quickstart" && quickstartGateway.password
         ? quickstartGateway.password
         : await prompter.text({
-            message: "Gateway password",
-            validate: (value) => (value?.trim() ? undefined : "Required"),
+            message: "Gateway password (blank to generate)",
+            placeholder: "Recommended for the Control UI",
+            initialValue: quickstartGateway.password ?? "",
           });
+    const password = String(passwordInput ?? "").trim() || randomToken();
     nextConfig = {
       ...nextConfig,
       gateway: {

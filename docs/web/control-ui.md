@@ -25,10 +25,10 @@ If the page fails to load, start the Gateway first: `openclaw gateway`.
 
 Auth is supplied during the WebSocket handshake via:
 
-- `connect.params.auth.token`
-- `connect.params.auth.password`
-  The dashboard settings panel lets you store a token; passwords are not persisted.
-  The onboarding wizard generates a gateway token by default, so paste it here on first connect.
+- `connect.params.auth.password` (shared password)
+- **Proxy auth headers** when `gateway.auth.mode="proxy"` and the request arrives through a trusted reverse proxy
+
+The Control UI **does not accept token auth**. Use a password or proxy auth (or Tailscale identity headers).
 
 ## Device pairing (first connection)
 
@@ -51,7 +51,7 @@ openclaw devices approve <requestId>
 
 Once approved, the device is remembered and won't require re-approval unless
 you revoke it with `openclaw devices revoke --device <id> --role <role>`. See
-[Devices CLI](/cli/devices) for token rotation and revocation.
+[Devices CLI](/cli/devices) for device revocation and audit.
 
 **Notes:**
 
@@ -114,19 +114,45 @@ verifies the identity by resolving the `x-forwarded-for` address with
 `tailscale whois` and matching it to the header, and only accepts these when the
 request hits loopback with Tailscale’s `x-forwarded-*` headers. Set
 `gateway.auth.allowTailscale: false` (or force `gateway.auth.mode: "password"`)
-if you want to require a token/password even for Serve traffic.
+if you want to require a password even for Serve traffic.
 
-### Bind to tailnet + token
+### Bind to tailnet + password
 
 ```bash
-openclaw gateway --bind tailnet --token "$(openssl rand -hex 32)"
+openclaw gateway --bind tailnet --auth password --password "$(openssl rand -hex 20)"
 ```
 
 Then open:
 
 - `http://<tailscale-ip>:18789/` (or your configured `gateway.controlUi.basePath`)
 
-Paste the token into the UI settings (sent as `connect.params.auth.token`).
+Enter the password when prompted (sent as `connect.params.auth.password`).
+
+### Reverse proxy (auth = proxy)
+
+If you terminate TLS at a reverse proxy and want the proxy to authenticate users,
+use `gateway.auth.mode: "proxy"` and have the proxy inject identity headers:
+
+```json5
+{
+  gateway: {
+    auth: {
+      mode: "proxy",
+      proxy: {
+        userHeader: "x-openclaw-user",
+        roleHeader: "x-openclaw-role",
+        scopesHeader: "x-openclaw-scopes",
+      },
+    },
+    trustedProxies: ["10.0.0.10"],
+  },
+}
+```
+
+Notes:
+
+- The proxy must **overwrite** incoming headers and set `x-forwarded-for`.
+- Only the IPs in `gateway.trustedProxies` are trusted for proxy auth.
 
 ## Insecure HTTP
 
@@ -139,14 +165,14 @@ OpenClaw **blocks** Control UI connections without device identity.
 - `https://<magicdns>/` (Serve)
 - `http://127.0.0.1:18789/` (on the gateway host)
 
-**Downgrade example (token-only over HTTP):**
+**Downgrade example (password-only over HTTP):**
 
 ```json5
 {
   gateway: {
     controlUi: { allowInsecureAuth: true },
     bind: "tailnet",
-    auth: { mode: "token", token: "replace-me" },
+    auth: { mode: "password", password: "replace-me" },
   },
 }
 ```
@@ -194,15 +220,15 @@ http://localhost:5173/?gatewayUrl=ws://<gateway-host>:18789
 Optional one-time auth (if needed):
 
 ```text
-http://localhost:5173/?gatewayUrl=wss://<gateway-host>:18789&token=<gateway-token>
+http://localhost:5173/?gatewayUrl=wss://<gateway-host>:18789&password=<gateway-password>
 ```
 
 Notes:
 
 - `gatewayUrl` is stored in localStorage after load and removed from the URL.
-- `token` is stored in localStorage; `password` is kept in memory only.
+- `password` is kept in memory only (never persisted).
 - When `gatewayUrl` is set, the UI does not fall back to config or environment credentials.
-  Provide `token` (or `password`) explicitly. Missing explicit credentials is an error.
+  Provide `password` explicitly if auth is required. Missing explicit credentials is an error.
 - Use `wss://` when the Gateway is behind TLS (Tailscale Serve, HTTPS proxy, etc.).
 - `gatewayUrl` is only accepted in a top-level window (not embedded) to prevent clickjacking.
 - For cross-origin dev setups (e.g. `pnpm ui:dev` to a remote Gateway), add the UI

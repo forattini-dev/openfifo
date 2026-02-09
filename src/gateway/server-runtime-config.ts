@@ -76,16 +76,23 @@ export async function resolveGatewayRuntimeConfig(params: {
     tailscaleMode,
   });
   const authMode: ResolvedGatewayAuth["mode"] = resolvedAuth.mode;
+  const trustedProxies = params.cfg.gateway?.trustedProxies ?? [];
   const hasToken = typeof resolvedAuth.token === "string" && resolvedAuth.token.trim().length > 0;
   const hasPassword =
     typeof resolvedAuth.password === "string" && resolvedAuth.password.trim().length > 0;
   const hasSharedSecret =
     (authMode === "token" && hasToken) || (authMode === "password" && hasPassword);
+  const hasProxyAuth = authMode === "proxy";
   const hooksConfig = resolveHooksConfig(params.cfg);
   const canvasHostEnabled =
     process.env.OPENCLAW_SKIP_CANVAS_HOST !== "1" && params.cfg.canvasHost?.enabled !== false;
 
   assertGatewayAuthConfigured(resolvedAuth);
+  if (authMode === "proxy" && trustedProxies.length === 0) {
+    throw new Error(
+      "gateway.auth.mode=proxy requires gateway.trustedProxies (set proxy IPs to trust auth headers)",
+    );
+  }
   if (tailscaleMode === "funnel" && authMode !== "password") {
     throw new Error(
       "tailscale funnel requires gateway auth mode=password (set gateway.auth.password or OPENCLAW_GATEWAY_PASSWORD)",
@@ -94,7 +101,7 @@ export async function resolveGatewayRuntimeConfig(params: {
   if (tailscaleMode !== "off" && !isLoopbackHost(bindHost)) {
     throw new Error("tailscale serve/funnel requires gateway bind=loopback (127.0.0.1)");
   }
-  if (!isLoopbackHost(bindHost) && !hasSharedSecret) {
+  if (!isLoopbackHost(bindHost) && !hasSharedSecret && !hasProxyAuth) {
     throw new Error(
       `refusing to bind gateway to ${bindHost}:${params.port} without auth (set gateway.auth.token/password, or set OPENCLAW_GATEWAY_TOKEN/OPENCLAW_GATEWAY_PASSWORD)`,
     );

@@ -42,8 +42,8 @@ pnpm gateway:watch
 - `--force` uses `lsof` to find listeners on the chosen port, sends SIGTERM, logs what it killed, then starts the gateway (fails fast if `lsof` is missing).
 - If you run under a supervisor (launchd/systemd/mac app child-process mode), a stop/restart typically sends **SIGTERM**; older builds may surface this as `pnpm` `ELIFECYCLE` exit code **143** (SIGTERM), which is a normal shutdown, not a crash.
 - **SIGUSR1** triggers an in-process restart when authorized (gateway tool/config apply/update, or enable `commands.restart` for manual restarts).
-- Gateway auth is required by default: set `gateway.auth.token` (or `OPENCLAW_GATEWAY_TOKEN`) or `gateway.auth.password`. Clients must send `connect.params.auth.token/password` unless using Tailscale Serve identity.
-- The wizard now generates a token by default, even on loopback.
+- Gateway auth is required by default: set `gateway.auth.password` (recommended for the Control UI), or configure `gateway.auth.mode="proxy"`. Non-browser clients may still use `gateway.auth.token`. Clients must send `connect.params.auth.password` unless using Tailscale Serve identity or proxy auth headers.
+- The wizard now generates a password by default, even on loopback.
 - Port precedence: `--port` > `OPENCLAW_GATEWAY_PORT` > `gateway.port` > default `18789`.
 
 ## Remote access
@@ -55,7 +55,7 @@ pnpm gateway:watch
   ```
 
 - Clients then connect to `ws://127.0.0.1:18789` through the tunnel.
-- If a token is configured, clients must include it in `connect.params.auth.token` even over the tunnel.
+- If a token is configured, non-browser clients must include it in `connect.params.auth.token` even over the tunnel.
 
 ## Multiple gateways (same host)
 

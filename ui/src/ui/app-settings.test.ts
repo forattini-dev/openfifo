@@ -10,7 +10,6 @@ type SettingsHost = Parameters<typeof setTabFromRoute>[0] & {
 const createHost = (tab: Tab): SettingsHost => ({
   settings: {
     gatewayUrl: "",
-    token: "",
     sessionKey: "main",
     lastActiveSessionKey: "main",
     theme: "system",

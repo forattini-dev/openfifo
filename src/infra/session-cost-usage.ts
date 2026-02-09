@@ -9,6 +9,7 @@ import {
   resolveSessionFilePath,
   resolveSessionTranscriptsDirForAgent,
 } from "../config/sessions/paths.js";
+import { ensureSessionFileCached } from "../persistence/session-files.js";
 import { countToolResults, extractToolCallNames } from "../utils/transcript-tools.js";
 import { estimateUsageCost, resolveModelCostConfig } from "../utils/usage-format.js";
 
@@ -567,6 +568,9 @@ export async function loadSessionCostSummary(params: {
   const sessionFile =
     params.sessionFile ??
     (params.sessionId ? resolveSessionFilePath(params.sessionId, params.sessionEntry) : undefined);
+  if (sessionFile) {
+    await ensureSessionFileCached(sessionFile);
+  }
   if (!sessionFile || !fs.existsSync(sessionFile)) {
     return null;
   }
@@ -856,6 +860,9 @@ export async function loadSessionUsageTimeSeries(params: {
   const sessionFile =
     params.sessionFile ??
     (params.sessionId ? resolveSessionFilePath(params.sessionId, params.sessionEntry) : undefined);
+  if (sessionFile) {
+    await ensureSessionFileCached(sessionFile);
+  }
   if (!sessionFile || !fs.existsSync(sessionFile)) {
     return null;
   }
@@ -936,6 +943,9 @@ export async function loadSessionLogs(params: {
   const sessionFile =
     params.sessionFile ??
     (params.sessionId ? resolveSessionFilePath(params.sessionId, params.sessionEntry) : undefined);
+  if (sessionFile) {
+    await ensureSessionFileCached(sessionFile);
+  }
   if (!sessionFile || !fs.existsSync(sessionFile)) {
     return null;
   }

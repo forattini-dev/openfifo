@@ -1,7 +1,8 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import type { SubagentRunRecord } from "./subagent-registry.js";
 import { STATE_DIR } from "../config/paths.js";
-import { loadJsonFile, saveJsonFile } from "../infra/json-file.js";
+import { buildS3dbKey, getS3dbStorage } from "../persistence/s3db.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.js";
 
 export type PersistedSubagentRegistryVersion = 1 | 2;
@@ -19,6 +20,7 @@ type PersistedSubagentRegistryV2 = {
 type PersistedSubagentRegistry = PersistedSubagentRegistryV1 | PersistedSubagentRegistryV2;
 
 const REGISTRY_VERSION = 2 as const;
+const REGISTRY_NAMESPACE = "subagent-registry";
 
 type PersistedSubagentRunRecord = SubagentRunRecord;
 
@@ -33,9 +35,36 @@ export function resolveSubagentRegistryPath(): string {
   return path.join(STATE_DIR, "subagents", "runs.json");
 }
 
-export function loadSubagentRegistryFromDisk(): Map<string, SubagentRunRecord> {
+function resolveSubagentRegistryKey(): string {
+  return buildS3dbKey(REGISTRY_NAMESPACE, resolveSubagentRegistryPath());
+}
+
+async function readLegacyRegistry(): Promise<unknown> {
   const pathname = resolveSubagentRegistryPath();
-  const raw = loadJsonFile(pathname);
+  try {
+    const raw = await fs.readFile(pathname, "utf8");
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function loadSubagentRegistryFromDisk(): Promise<Map<string, SubagentRunRecord>> {
+  const storage = await getS3dbStorage();
+  const key = resolveSubagentRegistryKey();
+  let raw = await storage.get(key);
+  if (!raw) {
+    raw = await readLegacyRegistry();
+    if (raw && typeof raw === "object") {
+      await storage.set(key, raw as Record<string, unknown>, { behavior: "body-only" });
+      try {
+        await fs.rm(resolveSubagentRegistryPath(), { force: true });
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
+
   if (!raw || typeof raw !== "object") {
     return new Map();
   }
@@ -96,7 +125,7 @@ export function loadSubagentRegistryFromDisk(): Map<string, SubagentRunRecord> {
   }
   if (migrated) {
     try {
-      saveSubagentRegistryToDisk(out);
+      await saveSubagentRegistryToDisk(out);
     } catch {
       // ignore migration write failures
     }
@@ -104,8 +133,10 @@ export function loadSubagentRegistryFromDisk(): Map<string, SubagentRunRecord> {
   return out;
 }
 
-export function saveSubagentRegistryToDisk(runs: Map<string, SubagentRunRecord>) {
-  const pathname = resolveSubagentRegistryPath();
+export async function saveSubagentRegistryToDisk(
+  runs: Map<string, SubagentRunRecord>,
+): Promise<void> {
+  const storage = await getS3dbStorage();
   const serialized: Record<string, PersistedSubagentRunRecord> = {};
   for (const [runId, entry] of runs.entries()) {
     serialized[runId] = entry;
@@ -114,5 +145,6 @@ export function saveSubagentRegistryToDisk(runs: Map<string, SubagentRunRecord>)
     version: REGISTRY_VERSION,
     runs: serialized,
   };
-  saveJsonFile(pathname, out);
+  const key = resolveSubagentRegistryKey();
+  await storage.set(key, out as unknown as Record<string, unknown>, { behavior: "body-only" });
 }

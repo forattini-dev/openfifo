@@ -134,11 +134,34 @@ export async function installSkill(
   state.skillsBusyKey = skillKey;
   state.skillsError = null;
   try {
-    const result = await state.client.request<{ message?: string }>("skills.install", {
-      name,
-      installId,
-      timeoutMs: 120000,
-    });
+    const runInstall = (allowUnsafe?: boolean) =>
+      state.client?.request<{
+        message?: string;
+        warnings?: string[];
+        requiresConfirmation?: boolean;
+      }>("skills.install", {
+        name,
+        installId,
+        timeoutMs: 120000,
+        allowUnsafe,
+      });
+
+    let result = await runInstall();
+    if (result?.requiresConfirmation) {
+      const warnings = result.warnings ?? [];
+      const warningText = warnings.length > 0 ? `\n\n${warnings.join("\n")}` : "";
+      const confirm = window.confirm(
+        `Skill "${name}" triggered safety warnings.${warningText}\n\nInstall anyway?`,
+      );
+      if (!confirm) {
+        setSkillMessage(state, skillKey, {
+          kind: "error",
+          message: "Install canceled due to safety warnings.",
+        });
+        return;
+      }
+      result = await runInstall(true);
+    }
     await loadSkills(state);
     setSkillMessage(state, skillKey, {
       kind: "success",

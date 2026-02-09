@@ -13,6 +13,10 @@ import type { EmbeddedPiCompactResult } from "./types.js";
 import { resolveHeartbeatPrompt } from "../../auto-reply/heartbeat.js";
 import { resolveChannelCapabilities } from "../../config/channel-capabilities.js";
 import { getMachineDisplayName } from "../../infra/machine-name.js";
+import {
+  ensureSessionFileCached,
+  persistSessionFileToS3db,
+} from "../../persistence/session-files.js";
 import { type enqueueCommand, enqueueCommandInLane } from "../../process/command-queue.js";
 import { isSubagentSessionKey } from "../../routing/session-key.js";
 import { resolveSignalReactionLevel } from "../../signal/reaction-level.js";
@@ -364,6 +368,7 @@ export async function compactEmbeddedPiSessionDirect(
       sessionFile: params.sessionFile,
     });
     try {
+      await ensureSessionFileCached(params.sessionFile);
       await repairSessionFileIfNeeded({
         sessionFile: params.sessionFile,
         warn: (message) => log.warn(message),
@@ -468,6 +473,7 @@ export async function compactEmbeddedPiSessionDirect(
         session.dispose();
       }
     } finally {
+      await persistSessionFileToS3db(params.sessionFile);
       await sessionLock.release();
     }
   } catch (err) {

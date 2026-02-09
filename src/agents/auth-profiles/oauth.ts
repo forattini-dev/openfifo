@@ -4,16 +4,16 @@ import {
   type OAuthCredentials,
   type OAuthProvider,
 } from "@mariozechner/pi-ai";
-import lockfile from "proper-lockfile";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { AuthProfileStore } from "./types.js";
+import { getS3dbStorage } from "../../persistence/s3db.js";
 import { refreshQwenPortalCredentials } from "../../providers/qwen-portal-oauth.js";
 import { refreshChutesTokens } from "../chutes-oauth.js";
-import { AUTH_STORE_LOCK_OPTIONS, log } from "./constants.js";
+import { log } from "./constants.js";
 import { formatAuthDoctorHint } from "./doctor.js";
 import { ensureAuthStoreFile, resolveAuthStorePath } from "./paths.js";
 import { suggestOAuthProfileIdForLegacyDefault } from "./repair.js";
-import { ensureAuthProfileStore, saveAuthProfileStore } from "./store.js";
+import { ensureAuthProfileStore, resolveAuthStoreLockName, saveAuthProfileStore } from "./store.js";
 
 const OAUTH_PROVIDER_IDS = new Set<string>(getOAuthProviders().map((provider) => provider.id));
 
@@ -40,11 +40,14 @@ async function refreshOAuthTokenWithLock(params: {
   const authPath = resolveAuthStorePath(params.agentDir);
   ensureAuthStoreFile(authPath);
 
-  let release: (() => Promise<void>) | undefined;
+  let lock: { token: string } | null = null;
   try {
-    release = await lockfile.lock(authPath, {
-      ...AUTH_STORE_LOCK_OPTIONS,
-    });
+    const storage = await getS3dbStorage();
+    const lockName = resolveAuthStoreLockName(authPath);
+    lock = await storage.acquireLock(lockName, { timeout: 10_000, ttl: 30 });
+    if (!lock) {
+      return null;
+    }
 
     const store = ensureAuthProfileStore(params.agentDir);
     const cred = store.profiles[params.profileId];
@@ -95,9 +98,10 @@ async function refreshOAuthTokenWithLock(params: {
 
     return result;
   } finally {
-    if (release) {
+    if (lock) {
       try {
-        await release();
+        const storage = await getS3dbStorage();
+        await storage.releaseLock(lock);
       } catch {
         // ignore unlock errors
       }

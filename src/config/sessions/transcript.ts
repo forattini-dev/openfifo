@@ -2,6 +2,10 @@ import { CURRENT_SESSION_VERSION, SessionManager } from "@mariozechner/pi-coding
 import fs from "node:fs";
 import path from "node:path";
 import type { SessionEntry } from "./types.js";
+import {
+  ensureSessionFileCached,
+  persistSessionFileToS3db,
+} from "../../persistence/session-files.js";
 import { emitSessionTranscriptUpdate } from "../../sessions/transcript-events.js";
 import { resolveDefaultSessionStorePath, resolveSessionTranscriptPath } from "./paths.js";
 import { loadSessionStore, updateSessionStore } from "./store.js";
@@ -61,6 +65,7 @@ async function ensureSessionHeader(params: {
   sessionFile: string;
   sessionId: string;
 }): Promise<void> {
+  await ensureSessionFileCached(params.sessionFile);
   if (fs.existsSync(params.sessionFile)) {
     return;
   }
@@ -106,6 +111,7 @@ export async function appendAssistantMessageToSessionTranscript(params: {
   const sessionFile =
     entry.sessionFile?.trim() || resolveSessionTranscriptPath(entry.sessionId, params.agentId);
 
+  await ensureSessionFileCached(sessionFile);
   await ensureSessionHeader({ sessionFile, sessionId: entry.sessionId });
 
   const sessionManager = SessionManager.open(sessionFile);
@@ -142,6 +148,7 @@ export async function appendAssistantMessageToSessionTranscript(params: {
     });
   }
 
+  await persistSessionFileToS3db(sessionFile);
   emitSessionTranscriptUpdate(sessionFile);
   return { ok: true, sessionFile };
 }

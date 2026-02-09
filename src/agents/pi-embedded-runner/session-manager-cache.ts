@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import fs from "node:fs/promises";
 import { isCacheEnabled, resolveCacheTtlMs } from "../../config/cache-utils.js";
+import { ensureSessionFileCached } from "../../persistence/session-files.js";
 
 type SessionManagerCacheEntry = {
   sessionFile: string;
@@ -54,6 +55,7 @@ export async function prewarmSessionFile(sessionFile: string): Promise<void> {
   }
 
   try {
+    await ensureSessionFileCached(sessionFile);
     // Read a small chunk to encourage OS page cache warmup.
     const handle = await fs.open(sessionFile, "r");
     try {

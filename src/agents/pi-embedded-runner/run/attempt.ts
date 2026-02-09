@@ -9,6 +9,10 @@ import { resolveHeartbeatPrompt } from "../../../auto-reply/heartbeat.js";
 import { resolveChannelCapabilities } from "../../../config/channel-capabilities.js";
 import { getMachineDisplayName } from "../../../infra/machine-name.js";
 import { MAX_IMAGE_BYTES } from "../../../media/constants.js";
+import {
+  ensureSessionFileCached,
+  persistSessionFileToS3db,
+} from "../../../persistence/session-files.js";
 import { getGlobalHookRunner } from "../../../plugins/hook-runner-global.js";
 import { isSubagentSessionKey, normalizeAgentId } from "../../../routing/session-key.js";
 import { resolveSignalReactionLevel } from "../../../signal/reaction-level.js";
@@ -407,6 +411,7 @@ export async function runEmbeddedAttempt(
     let sessionManager: ReturnType<typeof guardSessionManager> | undefined;
     let session: Awaited<ReturnType<typeof createAgentSession>>["session"] | undefined;
     try {
+      await ensureSessionFileCached(params.sessionFile);
       await repairSessionFileIfNeeded({
         sessionFile: params.sessionFile,
         warn: (message) => log.warn(message),
@@ -919,6 +924,7 @@ export async function runEmbeddedAttempt(
       // Always tear down the session (and release the lock) before we leave this attempt.
       sessionManager?.flushPendingToolResults?.();
       session?.dispose();
+      await persistSessionFileToS3db(params.sessionFile);
       await sessionLock.release();
     }
   } finally {

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { formatCliCommand } from "../cli/command-format.js";
 import { resolveStateDir } from "../config/paths.js";
+import { buildS3dbKey, getS3dbStorage } from "../persistence/s3db.js";
 
 export type RestartSentinelLog = {
   stdoutTail?: string | null;
@@ -51,6 +52,7 @@ export type RestartSentinel = {
 };
 
 const SENTINEL_FILENAME = "restart-sentinel.json";
+const SENTINEL_NAMESPACE = "restart-sentinel";
 
 export function formatDoctorNonInteractiveHint(
   env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
@@ -62,26 +64,40 @@ export function resolveRestartSentinelPath(env: NodeJS.ProcessEnv = process.env)
   return path.join(resolveStateDir(env), SENTINEL_FILENAME);
 }
 
+function resolveRestartSentinelKey(env: NodeJS.ProcessEnv = process.env): string {
+  return buildS3dbKey(SENTINEL_NAMESPACE, resolveRestartSentinelPath(env));
+}
+
 export async function writeRestartSentinel(
   payload: RestartSentinelPayload,
   env: NodeJS.ProcessEnv = process.env,
 ) {
-  const filePath = resolveRestartSentinelPath(env);
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
   const data: RestartSentinel = { version: 1, payload };
-  await fs.writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
-  return filePath;
+  const storage = await getS3dbStorage();
+  const key = resolveRestartSentinelKey(env);
+  await storage.set(key, data as unknown as Record<string, unknown>, { behavior: "body-only" });
+  return key;
 }
 
 export async function readRestartSentinel(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<RestartSentinel | null> {
+  const storage = await getS3dbStorage();
+  const key = resolveRestartSentinelKey(env);
+  const raw = await storage.get(key);
+  if (raw && typeof raw === "object") {
+    const parsed = raw as RestartSentinel;
+    if (parsed?.version === 1 && parsed.payload) {
+      return parsed;
+    }
+  }
+
   const filePath = resolveRestartSentinelPath(env);
   try {
-    const raw = await fs.readFile(filePath, "utf-8");
+    const rawFile = await fs.readFile(filePath, "utf-8");
     let parsed: RestartSentinel | undefined;
     try {
-      parsed = JSON.parse(raw) as RestartSentinel | undefined;
+      parsed = JSON.parse(rawFile) as RestartSentinel | undefined;
     } catch {
       await fs.unlink(filePath).catch(() => {});
       return null;
@@ -90,6 +106,8 @@ export async function readRestartSentinel(
       await fs.unlink(filePath).catch(() => {});
       return null;
     }
+    await storage.set(key, parsed as unknown as Record<string, unknown>, { behavior: "body-only" });
+    await fs.unlink(filePath).catch(() => {});
     return parsed;
   } catch {
     return null;
@@ -99,12 +117,13 @@ export async function readRestartSentinel(
 export async function consumeRestartSentinel(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<RestartSentinel | null> {
-  const filePath = resolveRestartSentinelPath(env);
   const parsed = await readRestartSentinel(env);
   if (!parsed) {
     return null;
   }
-  await fs.unlink(filePath).catch(() => {});
+  const storage = await getS3dbStorage();
+  const key = resolveRestartSentinelKey(env);
+  await storage.delete(key).catch(() => {});
   return parsed;
 }
 

@@ -10,6 +10,7 @@ import { ensureOpenClawCliOnPath } from "../infra/path-env.js";
 import { assertSupportedRuntime } from "../infra/runtime-guard.js";
 import { installUnhandledRejectionHandler } from "../infra/unhandled-rejections.js";
 import { enableConsoleCapture } from "../logging.js";
+import { initS3dbPersistence } from "../persistence/init.js";
 import { getPrimaryCommand, hasHelpOrVersion } from "./argv.js";
 import { tryRouteCli } from "./route.js";
 
@@ -29,6 +30,7 @@ export async function runCli(argv: string[] = process.argv) {
   loadDotEnv({ quiet: true });
   normalizeEnv();
   ensureOpenClawCliOnPath();
+  await initS3dbPersistence();
 
   // Enforce the minimum supported runtime before doing any work.
   assertSupportedRuntime();

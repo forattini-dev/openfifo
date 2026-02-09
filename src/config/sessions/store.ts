@@ -3,6 +3,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { MsgContext } from "../../auto-reply/templating.js";
+import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { buildS3dbKey, getS3dbStorage } from "../../persistence/s3db.js";
 import {
   deliveryContextFromSession,
   mergeDeliveryContext,
@@ -13,6 +15,8 @@ import {
 import { getFileMtimeMs, isCacheEnabled, resolveCacheTtlMs } from "../cache-utils.js";
 import { deriveSessionMetaPatch } from "./metadata.js";
 import { mergeSessionEntry, type SessionEntry } from "./types.js";
+
+const log = createSubsystemLogger("session-store");
 
 // ============================================================================
 // Session Store Cache with TTL Support
@@ -27,6 +31,7 @@ type SessionStoreCacheEntry = {
 
 const SESSION_STORE_CACHE = new Map<string, SessionStoreCacheEntry>();
 const DEFAULT_SESSION_STORE_TTL_MS = 45_000; // 45 seconds (between 30-60s)
+const SESSION_STORE_NAMESPACE = "sessions/store";
 
 function isSessionStoreRecord(value: unknown): value is Record<string, SessionEntry> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -51,6 +56,22 @@ function isSessionStoreCacheValid(entry: SessionStoreCacheEntry): boolean {
 
 function invalidateSessionStoreCache(storePath: string): void {
   SESSION_STORE_CACHE.delete(storePath);
+}
+
+function setSessionStoreCache(
+  storePath: string,
+  store: Record<string, SessionEntry>,
+  mtimeMs?: number,
+): void {
+  if (!isSessionStoreCacheEnabled()) {
+    return;
+  }
+  SESSION_STORE_CACHE.set(storePath, {
+    store: structuredClone(store),
+    loadedAt: Date.now(),
+    storePath,
+    mtimeMs,
+  });
 }
 
 function normalizeSessionEntryDelivery(entry: SessionEntry): SessionEntry {
@@ -98,46 +119,8 @@ function normalizeSessionStore(store: Record<string, SessionEntry>): void {
   }
 }
 
-export function clearSessionStoreCacheForTest(): void {
-  SESSION_STORE_CACHE.clear();
-}
-
-type LoadSessionStoreOptions = {
-  skipCache?: boolean;
-};
-
-export function loadSessionStore(
-  storePath: string,
-  opts: LoadSessionStoreOptions = {},
-): Record<string, SessionEntry> {
-  // Check cache first if enabled
-  if (!opts.skipCache && isSessionStoreCacheEnabled()) {
-    const cached = SESSION_STORE_CACHE.get(storePath);
-    if (cached && isSessionStoreCacheValid(cached)) {
-      const currentMtimeMs = getFileMtimeMs(storePath);
-      if (currentMtimeMs === cached.mtimeMs) {
-        // Return a deep copy to prevent external mutations affecting cache
-        return structuredClone(cached.store);
-      }
-      invalidateSessionStoreCache(storePath);
-    }
-  }
-
-  // Cache miss or disabled - load from disk
-  let store: Record<string, SessionEntry> = {};
-  let mtimeMs = getFileMtimeMs(storePath);
-  try {
-    const raw = fs.readFileSync(storePath, "utf-8");
-    const parsed = JSON5.parse(raw);
-    if (isSessionStoreRecord(parsed)) {
-      store = parsed;
-    }
-    mtimeMs = getFileMtimeMs(storePath) ?? mtimeMs;
-  } catch {
-    // ignore missing/invalid store; we'll recreate it
-  }
-
-  // Best-effort migration: message provider → channel naming.
+function migrateLegacySessionStoreEntries(store: Record<string, SessionEntry>): boolean {
+  let mutated = false;
   for (const entry of Object.values(store)) {
     if (!entry || typeof entry !== "object") {
       continue;
@@ -146,60 +129,151 @@ export function loadSessionStore(
     if (typeof rec.channel !== "string" && typeof rec.provider === "string") {
       rec.channel = rec.provider;
       delete rec.provider;
+      mutated = true;
     }
     if (typeof rec.lastChannel !== "string" && typeof rec.lastProvider === "string") {
       rec.lastChannel = rec.lastProvider;
       delete rec.lastProvider;
+      mutated = true;
     }
 
-    // Best-effort migration: legacy `room` field → `groupChannel` (keep value, prune old key).
+    // Best-effort migration: legacy `room` field → `groupChannel`.
     if (typeof rec.groupChannel !== "string" && typeof rec.room === "string") {
       rec.groupChannel = rec.room;
       delete rec.room;
+      mutated = true;
     } else if ("room" in rec) {
       delete rec.room;
+      mutated = true;
     }
   }
-
-  // Cache the result if caching is enabled
-  if (!opts.skipCache && isSessionStoreCacheEnabled()) {
-    SESSION_STORE_CACHE.set(storePath, {
-      store: structuredClone(store), // Store a copy to prevent external mutations
-      loadedAt: Date.now(),
-      storePath,
-      mtimeMs,
-    });
-  }
-
-  return structuredClone(store);
+  return mutated;
 }
 
-export function readSessionUpdatedAt(params: {
-  storePath: string;
-  sessionKey: string;
-}): number | undefined {
+export function clearSessionStoreCacheForTest(): void {
+  SESSION_STORE_CACHE.clear();
+}
+
+function resolveSessionStoreKey(storePath: string): string {
+  return buildS3dbKey(SESSION_STORE_NAMESPACE, storePath);
+}
+
+type SessionStoreEnvelope = {
+  version: 1;
+  updatedAt: number;
+  store: Record<string, SessionEntry>;
+};
+
+function coerceSessionStoreEnvelope(
+  raw: Record<string, unknown> | null,
+): SessionStoreEnvelope | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const store =
+    raw.store && typeof raw.store === "object" && !Array.isArray(raw.store)
+      ? (raw.store as Record<string, SessionEntry>)
+      : isSessionStoreRecord(raw)
+        ? (raw as Record<string, SessionEntry>)
+        : null;
+  if (!store) {
+    return null;
+  }
+  const updatedAt =
+    typeof raw.updatedAt === "number" && Number.isFinite(raw.updatedAt) ? raw.updatedAt : 0;
+  return {
+    version: 1,
+    updatedAt,
+    store,
+  };
+}
+
+async function readSessionStoreFromDisk(
+  storePath: string,
+): Promise<{ store: Record<string, SessionEntry>; mtimeMs?: number } | null> {
+  let raw = "";
   try {
-    const store = loadSessionStore(params.storePath);
-    return store[params.sessionKey]?.updatedAt;
-  } catch {
-    return undefined;
+    raw = await fs.promises.readFile(storePath, "utf-8");
+  } catch (err) {
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? String((err as { code?: unknown }).code)
+        : null;
+    if (code === "ENOENT") {
+      return null;
+    }
+    throw err;
   }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON5.parse(raw);
+  } catch {
+    return null;
+  }
+
+  if (!isSessionStoreRecord(parsed)) {
+    return null;
+  }
+
+  const store = parsed as Record<string, SessionEntry>;
+  migrateLegacySessionStoreEntries(store);
+  normalizeSessionStore(store);
+  return { store, mtimeMs: getFileMtimeMs(storePath) ?? undefined };
 }
 
-async function saveSessionStoreUnlocked(
+async function readSessionStoreFromS3db(storePath: string): Promise<SessionStoreEnvelope | null> {
+  const storage = await getS3dbStorage();
+  const key = resolveSessionStoreKey(storePath);
+  const raw = await storage.get(key);
+  return coerceSessionStoreEnvelope(raw);
+}
+
+async function persistSessionStoreToS3db(
   storePath: string,
   store: Record<string, SessionEntry>,
 ): Promise<void> {
-  // Invalidate cache on write to ensure consistency
+  const storage = await getS3dbStorage();
+  const key = resolveSessionStoreKey(storePath);
+  const payload: SessionStoreEnvelope = {
+    version: 1,
+    updatedAt: Date.now(),
+    store,
+  };
+  await storage.set(key, payload, { behavior: "body-only" });
+}
+
+async function loadSessionStoreForWrite(storePath: string): Promise<Record<string, SessionEntry>> {
+  const remote = await readSessionStoreFromS3db(storePath);
+  if (remote?.store) {
+    const store = structuredClone(remote.store);
+    const mutated = migrateLegacySessionStoreEntries(store);
+    normalizeSessionStore(store);
+    if (mutated) {
+      await persistSessionStoreToS3db(storePath, store);
+    }
+    return store;
+  }
+
+  const legacy = await readSessionStoreFromDisk(storePath);
+  if (legacy?.store) {
+    await persistSessionStoreToS3db(storePath, legacy.store);
+    return legacy.store;
+  }
+
+  return {};
+}
+
+async function writeSessionStoreToFile(
+  storePath: string,
+  store: Record<string, SessionEntry>,
+): Promise<void> {
   invalidateSessionStoreCache(storePath);
-
+  migrateLegacySessionStoreEntries(store);
   normalizeSessionStore(store);
-
   await fs.promises.mkdir(path.dirname(storePath), { recursive: true });
   const json = JSON.stringify(store, null, 2);
 
-  // Windows: avoid atomic rename swaps (can be flaky under concurrent access).
-  // We serialize writers via the session-store lock instead.
   if (process.platform === "win32") {
     try {
       await fs.promises.writeFile(storePath, json, "utf-8");
@@ -220,7 +294,6 @@ async function saveSessionStoreUnlocked(
   try {
     await fs.promises.writeFile(tmp, json, { mode: 0o600, encoding: "utf-8" });
     await fs.promises.rename(tmp, storePath);
-    // Ensure permissions are set even if rename loses them
     await fs.promises.chmod(storePath, 0o600);
   } catch (err) {
     const code =
@@ -229,8 +302,6 @@ async function saveSessionStoreUnlocked(
         : null;
 
     if (code === "ENOENT") {
-      // In tests the temp session-store directory may be deleted while writes are in-flight.
-      // Best-effort: try a direct write (recreating the parent dir), otherwise ignore.
       try {
         await fs.promises.mkdir(path.dirname(storePath), { recursive: true });
         await fs.promises.writeFile(storePath, json, { mode: 0o600, encoding: "utf-8" });
@@ -254,6 +325,152 @@ async function saveSessionStoreUnlocked(
   }
 }
 
+export async function hydrateSessionStoreFromS3db(storePath: string): Promise<boolean> {
+  const remote = await readSessionStoreFromS3db(storePath);
+  if (remote?.store) {
+    const localMtime = getFileMtimeMs(storePath) ?? 0;
+    if (localMtime >= remote.updatedAt && localMtime > 0) {
+      return true;
+    }
+    let writeError: unknown = null;
+    try {
+      await writeSessionStoreToFile(storePath, remote.store);
+    } catch (err) {
+      writeError = err;
+    }
+    const mtimeMs = writeError ? undefined : (getFileMtimeMs(storePath) ?? remote.updatedAt);
+    setSessionStoreCache(storePath, remote.store, mtimeMs);
+    if (writeError) {
+      log.warn(
+        { err: String(writeError), storePath },
+        "failed to hydrate session store to local disk; using in-memory snapshot",
+      );
+    }
+    return true;
+  }
+
+  const legacy = await readSessionStoreFromDisk(storePath);
+  if (legacy?.store) {
+    await persistSessionStoreToS3db(storePath, legacy.store);
+    setSessionStoreCache(storePath, legacy.store, legacy.mtimeMs);
+    return true;
+  }
+
+  return false;
+}
+
+async function refreshSessionStoreFromS3db(storePath: string): Promise<void> {
+  const remote = await readSessionStoreFromS3db(storePath);
+  if (!remote) {
+    return;
+  }
+  const localMtime = getFileMtimeMs(storePath) ?? 0;
+  if (localMtime >= remote.updatedAt && localMtime > 0) {
+    return;
+  }
+  let writeError: unknown = null;
+  try {
+    await writeSessionStoreToFile(storePath, remote.store);
+  } catch (err) {
+    writeError = err;
+  }
+  const mtimeMs = writeError ? undefined : (getFileMtimeMs(storePath) ?? remote.updatedAt);
+  setSessionStoreCache(storePath, remote.store, mtimeMs);
+  if (writeError) {
+    log.warn(
+      { err: String(writeError), storePath },
+      "failed to refresh session store cache on disk; using in-memory snapshot",
+    );
+  }
+}
+
+type LoadSessionStoreOptions = {
+  skipCache?: boolean;
+};
+
+export function loadSessionStore(
+  storePath: string,
+  opts: LoadSessionStoreOptions = {},
+): Record<string, SessionEntry> {
+  // Check cache first if enabled
+  if (!opts.skipCache && isSessionStoreCacheEnabled()) {
+    const cached = SESSION_STORE_CACHE.get(storePath);
+    if (cached && isSessionStoreCacheValid(cached)) {
+      if (cached.mtimeMs === undefined) {
+        return structuredClone(cached.store);
+      }
+      const currentMtimeMs = getFileMtimeMs(storePath);
+      if (currentMtimeMs === cached.mtimeMs) {
+        // Return a deep copy to prevent external mutations affecting cache
+        return structuredClone(cached.store);
+      }
+      invalidateSessionStoreCache(storePath);
+    }
+  }
+
+  // Cache miss or disabled - load from disk
+  let store: Record<string, SessionEntry> = {};
+  let mtimeMs = getFileMtimeMs(storePath);
+  try {
+    const raw = fs.readFileSync(storePath, "utf-8");
+    const parsed = JSON5.parse(raw);
+    if (isSessionStoreRecord(parsed)) {
+      store = parsed;
+    }
+    mtimeMs = getFileMtimeMs(storePath) ?? mtimeMs;
+  } catch {
+    // ignore missing/invalid store; we'll recreate it
+  }
+
+  // Best-effort migration: legacy field names.
+  migrateLegacySessionStoreEntries(store);
+
+  // Cache the result if caching is enabled
+  if (!opts.skipCache && isSessionStoreCacheEnabled()) {
+    setSessionStoreCache(storePath, store, mtimeMs);
+  }
+
+  if (!opts.skipCache) {
+    void refreshSessionStoreFromS3db(storePath).catch(() => undefined);
+  }
+
+  return structuredClone(store);
+}
+
+export function readSessionUpdatedAt(params: {
+  storePath: string;
+  sessionKey: string;
+}): number | undefined {
+  try {
+    const store = loadSessionStore(params.storePath);
+    return store[params.sessionKey]?.updatedAt;
+  } catch {
+    return undefined;
+  }
+}
+
+async function saveSessionStoreUnlocked(
+  storePath: string,
+  store: Record<string, SessionEntry>,
+): Promise<void> {
+  let writeError: unknown = null;
+  try {
+    await writeSessionStoreToFile(storePath, store);
+  } catch (err) {
+    writeError = err;
+  }
+
+  await persistSessionStoreToS3db(storePath, store);
+
+  if (writeError) {
+    setSessionStoreCache(storePath, store, undefined);
+    log.warn(
+      { err: String(writeError), storePath },
+      "failed to persist session store to local disk; s3db write succeeded",
+    );
+  }
+}
+
 export async function saveSessionStore(
   storePath: string,
   store: Record<string, SessionEntry>,
@@ -269,7 +486,7 @@ export async function updateSessionStore<T>(
 ): Promise<T> {
   return await withSessionStoreLock(storePath, async () => {
     // Always re-read inside the lock to avoid clobbering concurrent writers.
-    const store = loadSessionStore(storePath, { skipCache: true });
+    const store = await loadSessionStoreForWrite(storePath);
     const result = await mutator(store);
     await saveSessionStoreUnlocked(storePath, store);
     return result;
@@ -287,70 +504,22 @@ async function withSessionStoreLock<T>(
   fn: () => Promise<T>,
   opts: SessionStoreLockOptions = {},
 ): Promise<T> {
-  const timeoutMs = opts.timeoutMs ?? 10_000;
-  const pollIntervalMs = opts.pollIntervalMs ?? 25;
-  const staleMs = opts.staleMs ?? 30_000;
-  const lockPath = `${storePath}.lock`;
-  const startedAt = Date.now();
-
-  await fs.promises.mkdir(path.dirname(storePath), { recursive: true });
-
-  while (true) {
-    try {
-      const handle = await fs.promises.open(lockPath, "wx");
-      try {
-        await handle.writeFile(
-          JSON.stringify({ pid: process.pid, startedAt: Date.now() }),
-          "utf-8",
-        );
-      } catch {
-        // best-effort
-      }
-      await handle.close();
-      break;
-    } catch (err) {
-      const code =
-        err && typeof err === "object" && "code" in err
-          ? String((err as { code?: unknown }).code)
-          : null;
-      if (code === "ENOENT") {
-        // Store directory may be deleted/recreated in tests while writes are in-flight.
-        // Best-effort: recreate the parent dir and retry until timeout.
-        await fs.promises
-          .mkdir(path.dirname(storePath), { recursive: true })
-          .catch(() => undefined);
-        await new Promise((r) => setTimeout(r, pollIntervalMs));
-        continue;
-      }
-      if (code !== "EEXIST") {
-        throw err;
-      }
-
-      const now = Date.now();
-      if (now - startedAt > timeoutMs) {
-        throw new Error(`timeout acquiring session store lock: ${lockPath}`, { cause: err });
-      }
-
-      // Best-effort stale lock eviction (e.g. crashed process).
-      try {
-        const st = await fs.promises.stat(lockPath);
-        const ageMs = now - st.mtimeMs;
-        if (ageMs > staleMs) {
-          await fs.promises.unlink(lockPath);
-          continue;
-        }
-      } catch {
-        // ignore
-      }
-
-      await new Promise((r) => setTimeout(r, pollIntervalMs));
-    }
+  const storage = await getS3dbStorage();
+  const normalized = storePath.replace(/\\/g, "/");
+  const hash = crypto.createHash("sha256").update(normalized).digest("hex").slice(0, 16);
+  const lockName = `session-store:${hash}`;
+  const lock = await storage.acquireLock(lockName, {
+    timeout: Math.max(1, Math.floor(opts.timeoutMs ?? 10_000)),
+    ttl: 30,
+  });
+  if (!lock) {
+    throw new Error(`timeout acquiring session store lock: ${lockName}`);
   }
 
   try {
     return await fn();
   } finally {
-    await fs.promises.unlink(lockPath).catch(() => undefined);
+    await storage.releaseLock(lock).catch(() => undefined);
   }
 }
 
@@ -361,7 +530,7 @@ export async function updateSessionStoreEntry(params: {
 }): Promise<SessionEntry | null> {
   const { storePath, sessionKey, update } = params;
   return await withSessionStoreLock(storePath, async () => {
-    const store = loadSessionStore(storePath);
+    const store = await loadSessionStoreForWrite(storePath);
     const existing = store[sessionKey];
     if (!existing) {
       return null;
@@ -419,7 +588,7 @@ export async function updateLastRoute(params: {
 }) {
   const { storePath, sessionKey, channel, to, accountId, threadId, ctx } = params;
   return await withSessionStoreLock(storePath, async () => {
-    const store = loadSessionStore(storePath);
+    const store = await loadSessionStoreForWrite(storePath);
     const existing = store[sessionKey];
     const now = Date.now();
     const explicitContext = normalizeDeliveryContext(params.deliveryContext);

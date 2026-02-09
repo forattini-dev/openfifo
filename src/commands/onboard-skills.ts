@@ -148,14 +148,37 @@ export async function setupSkills(
       if (!installId) {
         continue;
       }
-      const spin = prompter.progress(`Installing ${name}…`);
-      const result = await installSkill({
-        workspaceDir,
-        skillName: target.name,
-        installId,
-        config: next,
-      });
-      const warnings = result.warnings ?? [];
+      const runInstall = async (allowUnsafe?: boolean) =>
+        installSkill({
+          workspaceDir,
+          skillName: target.name,
+          installId,
+          config: next,
+          allowUnsafe,
+        });
+
+      let spin = prompter.progress(`Installing ${name}…`);
+      let result = await runInstall();
+      let warnings = result.warnings ?? [];
+
+      if (result.requiresConfirmation) {
+        spin.stop(`Install paused: ${name}`);
+        for (const warning of warnings) {
+          runtime.log(warning);
+        }
+        const confirm = await prompter.confirm({
+          message: `Skill "${name}" triggered safety warnings. Install anyway?`,
+          initialValue: false,
+        });
+        if (!confirm) {
+          runtime.log(`Skipped ${name} due to safety warnings.`);
+          continue;
+        }
+        spin = prompter.progress(`Installing ${name} (confirmed)…`);
+        result = await runInstall(true);
+        warnings = result.warnings ?? [];
+      }
+
       if (result.ok) {
         spin.stop(warnings.length > 0 ? `Installed ${name} (with warnings)` : `Installed ${name}`);
         for (const warning of warnings) {

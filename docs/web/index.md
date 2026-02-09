@@ -59,19 +59,19 @@ Open:
 
 - `https://<magicdns>/` (or your configured `gateway.controlUi.basePath`)
 
-### Tailnet bind + token
+### Tailnet bind + password
 
 ```json5
 {
   gateway: {
     bind: "tailnet",
     controlUi: { enabled: true },
-    auth: { mode: "token", token: "your-token" },
+    auth: { mode: "password", password: "your-password" },
   },
 }
 ```
 
-Then start the gateway (token required for non-loopback binds):
+Then start the gateway (password required for non-loopback binds):
 
 ```bash
 openclaw gateway
@@ -95,14 +95,13 @@ Open:
 
 ## Security notes
 
-- Gateway auth is required by default (token/password or Tailscale identity headers).
-- Non-loopback binds still **require** a shared token/password (`gateway.auth` or env).
-- The wizard generates a gateway token by default (even on loopback).
-- The UI sends `connect.params.auth.token` or `connect.params.auth.password`.
+- Gateway auth is required by default (password or Tailscale identity headers, or proxy auth).
+- Non-loopback binds still **require** a shared password (`gateway.auth` or env) unless you use proxy auth.
+- The UI sends `connect.params.auth.password` (tokens are not supported by the Control UI).
 - The Control UI sends anti-clickjacking headers and only accepts same-origin browser
   websocket connections unless `gateway.controlUi.allowedOrigins` is set.
 - With Serve, Tailscale identity headers can satisfy auth when
-  `gateway.auth.allowTailscale` is `true` (no token/password required). Set
+  `gateway.auth.allowTailscale` is `true` (no password required). Set
   `gateway.auth.allowTailscale: false` to require explicit credentials. See
   [Tailscale](/gateway/tailscale) and [Security](/gateway/security).
 - `gateway.tailscale.mode: "funnel"` requires `gateway.auth.mode: "password"` (shared password).

@@ -125,7 +125,6 @@ export function connectGateway(host: GatewayHost) {
   host.client?.stop();
   host.client = new GatewayBrowserClient({
     url: host.settings.gatewayUrl,
-    token: host.settings.token.trim() ? host.settings.token : undefined,
     password: host.password.trim() ? host.password : undefined,
     clientName: "openclaw-control-ui",
     mode: "webchat",

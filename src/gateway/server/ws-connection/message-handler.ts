@@ -85,7 +85,8 @@ function formatGatewayAuthFailureMessage(params: {
   const isCli = isGatewayCliClient(client);
   const isControlUi = client?.id === GATEWAY_CLIENT_IDS.CONTROL_UI;
   const isWebchat = isWebchatClient(client);
-  const uiHint = "open the dashboard URL and paste the token in Control UI settings";
+  const uiHint =
+    "Control UI no longer accepts gateway tokens; use gateway.auth.password or proxy auth";
   const tokenHint = isCli
     ? "set gateway.remote.token to match gateway.auth.token"
     : isControlUi || isWebchat
@@ -96,6 +97,21 @@ function formatGatewayAuthFailureMessage(params: {
     : isControlUi || isWebchat
       ? "enter the password in Control UI settings"
       : "provide gateway auth password";
+  const proxyHint =
+    "ensure your auth proxy forwards a user header (x-auth-request-user) " +
+    "and set gateway.trustedProxies to the proxy IPs";
+  if (authMode === "proxy") {
+    switch (reason) {
+      case "proxy_untrusted":
+        return `unauthorized: proxy not trusted (${proxyHint})`;
+      case "proxy_user_missing":
+        return `unauthorized: proxy user header missing (${proxyHint})`;
+      case "proxy_missing_request":
+        return "unauthorized: proxy auth requires request headers";
+      default:
+        return `unauthorized: proxy auth required (${proxyHint})`;
+    }
+  }
   switch (reason) {
     case "token_missing":
       return `unauthorized: gateway token missing (${tokenHint})`;
@@ -402,7 +418,7 @@ export function attachGatewayWsMessageHandler(params: {
         let devicePublicKey: string | null = null;
         const hasTokenAuth = Boolean(connectParams.auth?.token);
         const hasPasswordAuth = Boolean(connectParams.auth?.password);
-        const hasSharedAuth = hasTokenAuth || hasPasswordAuth;
+        const hasSharedAuth = resolvedAuth.mode !== "proxy" && (hasTokenAuth || hasPasswordAuth);
         const allowInsecureControlUi =
           isControlUi && configSnapshot.gateway?.controlUi?.allowInsecureAuth === true;
         const disableControlUiDeviceAuth =

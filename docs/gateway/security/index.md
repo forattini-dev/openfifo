@@ -76,8 +76,9 @@ When the audit prints findings, treat this as a priority order:
 
 The Control UI needs a **secure context** (HTTPS or localhost) to generate device
 identity. If you enable `gateway.controlUi.allowInsecureAuth`, the UI falls back
-to **token-only auth** and skips device pairing when device identity is omitted. This is a security
-downgrade—prefer HTTPS (Tailscale Serve) or open the UI on `127.0.0.1`.
+to **password-only auth** and skips device pairing when device identity is omitted. This is a security
+downgrade—prefer HTTPS (Tailscale Serve) or open the UI on `127.0.0.1`. The Control UI does **not**
+accept token auth.
 
 For break-glass scenarios only, `gateway.controlUi.dangerouslyDisableDeviceAuth`
 disables device identity checks entirely. This is a severe security downgrade;
@@ -87,7 +88,7 @@ keep it off unless you are actively debugging and can revert quickly.
 
 ## Reverse Proxy Configuration
 
-If you run the Gateway behind a reverse proxy (nginx, Caddy, Traefik, etc.), you should configure `gateway.trustedProxies` for proper client IP detection.
+If you run the Gateway behind a reverse proxy (nginx, Caddy, Traefik, etc.), you should configure `gateway.trustedProxies` for proper client IP detection and (optionally) enable proxy auth with `gateway.auth.mode="proxy"`.
 
 When the Gateway detects proxy headers (`X-Forwarded-For` or `X-Real-IP`) from an address that is **not** in `trustedProxies`, it will **not** treat connections as local clients. If gateway auth is disabled, those connections are rejected. This prevents authentication bypass where proxied connections would otherwise appear to come from localhost and receive automatic trust.
 
@@ -402,18 +403,18 @@ In minimal mode, the Gateway still broadcasts enough for device discovery (`role
 
 ### 0.5) Lock down the Gateway WebSocket (local auth)
 
-Gateway auth is **required by default**. If no token/password is configured,
+Gateway auth is **required by default**. If no password (or proxy auth) is configured,
 the Gateway refuses WebSocket connections (fail‑closed).
 
-The onboarding wizard generates a token by default (even for loopback) so
+The onboarding wizard generates a password by default (even for loopback) so
 local clients must authenticate.
 
-Set a token so **all** WS clients must authenticate:
+Set a password so **all** WS clients must authenticate:
 
 ```json5
 {
   gateway: {
-    auth: { mode: "token", token: "your-token" },
+    auth: { mode: "password", password: "your-password" },
   },
 }
 ```
@@ -433,8 +434,9 @@ Local device pairing:
 
 Auth modes:
 
-- `gateway.auth.mode: "token"`: shared bearer token (recommended for most setups).
-- `gateway.auth.mode: "password"`: password auth (prefer setting via env: `OPENCLAW_GATEWAY_PASSWORD`).
+- `gateway.auth.mode: "token"`: shared bearer token (for non-browser clients; Control UI does not accept tokens).
+- `gateway.auth.mode: "password"`: password auth (recommended for Control UI; prefer `OPENCLAW_GATEWAY_PASSWORD`).
+- `gateway.auth.mode: "proxy"`: proxy auth via injected headers (requires `gateway.trustedProxies`).
 
 Rotation checklist (token/password):
 
@@ -455,7 +457,7 @@ injected by Tailscale.
 
 **Security rule:** do not forward these headers from your own reverse proxy. If
 you terminate TLS or proxy in front of the gateway, disable
-`gateway.auth.allowTailscale` and use token/password auth instead.
+`gateway.auth.allowTailscale` and use password/proxy auth instead.
 
 Trusted proxies:
 

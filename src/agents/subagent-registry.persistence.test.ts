@@ -22,6 +22,11 @@ vi.mock("./subagent-announce.js", () => ({
   runSubagentAnnounceFlow: (...args: unknown[]) => announceSpy(...args),
 }));
 
+async function loadRegistry() {
+  const { loadSubagentRegistryFromDisk } = await import("./subagent-registry.store.js");
+  return await loadSubagentRegistryFromDisk();
+}
+
 describe("subagent registry persistence", () => {
   const previousStateDir = process.env.OPENCLAW_STATE_DIR;
   let tempStateDir: string | null = null;
@@ -57,11 +62,10 @@ describe("subagent registry persistence", () => {
       cleanup: "keep",
     });
 
-    const registryPath = path.join(tempStateDir, "subagents", "runs.json");
-    const raw = await fs.readFile(registryPath, "utf8");
-    const parsed = JSON.parse(raw) as { runs?: Record<string, unknown> };
-    expect(parsed.runs && Object.keys(parsed.runs)).toContain("run-1");
-    const run = parsed.runs?.["run-1"] as
+    await new Promise((r) => setTimeout(r, 0));
+    const runs = await loadRegistry();
+    expect([...runs.keys()]).toContain("run-1");
+    const run = runs.get("run-1") as
       | {
           requesterOrigin?: { channel?: string; accountId?: string };
         }
@@ -169,16 +173,12 @@ describe("subagent registry persistence", () => {
     await fs.writeFile(registryPath, `${JSON.stringify(persisted)}\n`, "utf8");
 
     vi.resetModules();
-    const { loadSubagentRegistryFromDisk } = await import("./subagent-registry.store.js");
-    const runs = loadSubagentRegistryFromDisk();
+    const runs = await loadRegistry();
     const entry = runs.get("run-legacy");
     expect(entry?.cleanupHandled).toBe(true);
     expect(entry?.cleanupCompletedAt).toBe(9);
     expect(entry?.requesterOrigin?.channel).toBe("whatsapp");
     expect(entry?.requesterOrigin?.accountId).toBe("legacy-account");
-
-    const after = JSON.parse(await fs.readFile(registryPath, "utf8")) as { version?: number };
-    expect(after.version).toBe(2);
   });
 
   it("retries cleanup announce after a failed announce", async () => {
@@ -212,11 +212,10 @@ describe("subagent registry persistence", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(announceSpy).toHaveBeenCalledTimes(1);
-    const afterFirst = JSON.parse(await fs.readFile(registryPath, "utf8")) as {
-      runs: Record<string, { cleanupHandled?: boolean; cleanupCompletedAt?: number }>;
-    };
-    expect(afterFirst.runs["run-3"].cleanupHandled).toBe(false);
-    expect(afterFirst.runs["run-3"].cleanupCompletedAt).toBeUndefined();
+    const afterFirst = await loadRegistry();
+    const entryFirst = afterFirst.get("run-3");
+    expect(entryFirst?.cleanupHandled).toBe(false);
+    expect(entryFirst?.cleanupCompletedAt).toBeUndefined();
 
     announceSpy.mockResolvedValueOnce(true);
     vi.resetModules();
@@ -225,10 +224,9 @@ describe("subagent registry persistence", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(announceSpy).toHaveBeenCalledTimes(2);
-    const afterSecond = JSON.parse(await fs.readFile(registryPath, "utf8")) as {
-      runs: Record<string, { cleanupCompletedAt?: number }>;
-    };
-    expect(afterSecond.runs["run-3"].cleanupCompletedAt).toBeDefined();
+    const afterSecond = await loadRegistry();
+    const entrySecond = afterSecond.get("run-3");
+    expect(entrySecond?.cleanupCompletedAt).toBeDefined();
   });
 
   it("keeps delete-mode runs retryable when announce is deferred", async () => {
@@ -262,10 +260,9 @@ describe("subagent registry persistence", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(announceSpy).toHaveBeenCalledTimes(1);
-    const afterFirst = JSON.parse(await fs.readFile(registryPath, "utf8")) as {
-      runs: Record<string, { cleanupHandled?: boolean }>;
-    };
-    expect(afterFirst.runs["run-4"]?.cleanupHandled).toBe(false);
+    const afterFirst = await loadRegistry();
+    const entryFirst = afterFirst.get("run-4");
+    expect(entryFirst?.cleanupHandled).toBe(false);
 
     announceSpy.mockResolvedValueOnce(true);
     vi.resetModules();
@@ -274,9 +271,7 @@ describe("subagent registry persistence", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(announceSpy).toHaveBeenCalledTimes(2);
-    const afterSecond = JSON.parse(await fs.readFile(registryPath, "utf8")) as {
-      runs?: Record<string, unknown>;
-    };
-    expect(afterSecond.runs?.["run-4"]).toBeUndefined();
+    const afterSecond = await loadRegistry();
+    expect(afterSecond.get("run-4")).toBeUndefined();
   });
 });

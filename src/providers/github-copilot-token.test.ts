@@ -1,23 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const loadJsonFile = vi.fn();
-const saveJsonFile = vi.fn();
 const resolveStateDir = vi.fn().mockReturnValue("/tmp/openclaw-state");
-
-vi.mock("../infra/json-file.js", () => ({
-  loadJsonFile,
-  saveJsonFile,
-}));
+const storageGet = vi.fn();
+const storageSet = vi.fn();
+const getS3dbStorage = vi.fn().mockResolvedValue({
+  get: storageGet,
+  set: storageSet,
+});
 
 vi.mock("../config/paths.js", () => ({
   resolveStateDir,
 }));
 
+vi.mock("../persistence/s3db.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../persistence/s3db.js")>();
+  return {
+    ...actual,
+    getS3dbStorage,
+  };
+});
+
 describe("github-copilot token", () => {
   beforeEach(() => {
     vi.resetModules();
-    loadJsonFile.mockReset();
-    saveJsonFile.mockReset();
+    storageGet.mockReset();
+    storageSet.mockReset();
+    getS3dbStorage.mockClear();
     resolveStateDir.mockReset();
     resolveStateDir.mockReturnValue("/tmp/openclaw-state");
   });
@@ -35,7 +43,7 @@ describe("github-copilot token", () => {
 
   it("uses cache when token is still valid", async () => {
     const now = Date.now();
-    loadJsonFile.mockReturnValue({
+    storageGet.mockResolvedValue({
       token: "cached;proxy-ep=proxy.example.com;",
       expiresAt: now + 60 * 60 * 1000,
       updatedAt: now,
@@ -56,7 +64,7 @@ describe("github-copilot token", () => {
   });
 
   it("fetches and stores token when cache is missing", async () => {
-    loadJsonFile.mockReturnValue(undefined);
+    storageGet.mockResolvedValue(undefined);
 
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
@@ -76,6 +84,6 @@ describe("github-copilot token", () => {
 
     expect(res.token).toBe("fresh;proxy-ep=https://proxy.contoso.test;");
     expect(res.baseUrl).toBe("https://api.contoso.test");
-    expect(saveJsonFile).toHaveBeenCalledTimes(1);
+    expect(storageSet).toHaveBeenCalledTimes(1);
   });
 });

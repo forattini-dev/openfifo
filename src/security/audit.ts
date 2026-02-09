@@ -272,16 +272,17 @@ function collectGatewayConfigFindings(
   const hasPassword = typeof auth.password === "string" && auth.password.trim().length > 0;
   const hasSharedSecret =
     (auth.mode === "token" && hasToken) || (auth.mode === "password" && hasPassword);
+  const hasProxyAuth = auth.mode === "proxy";
   const hasTailscaleAuth = auth.allowTailscale && tailscaleMode === "serve";
-  const hasGatewayAuth = hasSharedSecret || hasTailscaleAuth;
+  const hasGatewayAuth = hasSharedSecret || hasTailscaleAuth || hasProxyAuth;
 
-  if (bind !== "loopback" && !hasSharedSecret) {
+  if (bind !== "loopback" && !hasSharedSecret && !hasProxyAuth) {
     findings.push({
       checkId: "gateway.bind_no_auth",
       severity: "critical",
       title: "Gateway binds beyond loopback without auth",
       detail: `gateway.bind="${bind}" but no gateway.auth token/password is configured.`,
-      remediation: `Set gateway.auth (token recommended) or bind to loopback.`,
+      remediation: `Set gateway.auth (token recommended), enable proxy auth, or bind to loopback.`,
     });
   }
 
@@ -307,7 +308,19 @@ function collectGatewayConfigFindings(
       detail:
         "gateway.bind is loopback but no gateway auth secret is configured. " +
         "If the Control UI is exposed through a reverse proxy, unauthenticated access is possible.",
-      remediation: "Set gateway.auth (token recommended) or keep the Control UI local-only.",
+      remediation: "Set gateway.auth (token recommended), or keep the Control UI local-only.",
+    });
+  }
+
+  if (auth.mode === "proxy" && trustedProxies.length === 0) {
+    findings.push({
+      checkId: "gateway.auth.proxy_trusted_proxies_missing",
+      severity: "critical",
+      title: "Proxy auth enabled without trusted proxies",
+      detail:
+        "gateway.auth.mode=proxy is set, but gateway.trustedProxies is empty. " +
+        "Without trusted proxies, auth headers can be spoofed.",
+      remediation: "Set gateway.trustedProxies to your proxy IPs.",
     });
   }
 
@@ -334,7 +347,7 @@ function collectGatewayConfigFindings(
       severity: "critical",
       title: "Control UI allows insecure HTTP auth",
       detail:
-        "gateway.controlUi.allowInsecureAuth=true allows token-only auth over HTTP and skips device identity.",
+        "gateway.controlUi.allowInsecureAuth=true allows password-only auth over HTTP and skips device identity.",
       remediation: "Disable it or switch to HTTPS (Tailscale Serve) or localhost.",
     });
   }

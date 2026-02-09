@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import type { CronJob } from "../types.js";
 import type { CronServiceState } from "./state.js";
 import { parseAbsoluteTimeMs } from "../parse.js";
@@ -252,15 +251,6 @@ function stripLegacyTopLevelFields(raw: Record<string, unknown>) {
   }
 }
 
-async function getFileMtimeMs(path: string): Promise<number | null> {
-  try {
-    const stats = await fs.promises.stat(path);
-    return stats.mtimeMs;
-  } catch {
-    return null;
-  }
-}
-
 export async function ensureLoaded(
   state: CronServiceState,
   opts?: {
@@ -278,7 +268,6 @@ export async function ensureLoaded(
   // Force reload always re-reads the file to avoid missing cross-service
   // edits on filesystems with coarse mtime resolution.
 
-  const fileMtimeMs = await getFileMtimeMs(state.deps.storePath);
   const loaded = await loadCronStore(state.deps.storePath);
   const jobs = (loaded.jobs ?? []) as unknown as Array<Record<string, unknown>>;
   let mutated = false;
@@ -473,7 +462,6 @@ export async function ensureLoaded(
   }
   state.store = { version: 1, jobs: jobs as unknown as CronJob[] };
   state.storeLoadedAtMs = state.deps.nowMs();
-  state.storeFileMtimeMs = fileMtimeMs;
 
   if (!opts?.skipRecompute) {
     recomputeNextRuns(state);
@@ -503,6 +491,4 @@ export async function persist(state: CronServiceState) {
     return;
   }
   await saveCronStore(state.deps.storePath, state.store);
-  // Update file mtime after save to prevent immediate reload
-  state.storeFileMtimeMs = await getFileMtimeMs(state.deps.storePath);
 }

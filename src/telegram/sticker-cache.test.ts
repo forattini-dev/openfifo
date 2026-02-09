@@ -1,11 +1,10 @@
-import fs from "node:fs";
-import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cacheSticker,
   getAllCachedStickers,
   getCachedSticker,
   getCacheStats,
+  resetStickerCacheForTest,
   searchStickers,
 } from "./sticker-cache.js";
 
@@ -14,22 +13,13 @@ vi.mock("../config/paths.js", () => ({
   STATE_DIR: "/tmp/openclaw-test-sticker-cache",
 }));
 
-const TEST_CACHE_DIR = "/tmp/openclaw-test-sticker-cache/telegram";
-const TEST_CACHE_FILE = path.join(TEST_CACHE_DIR, "sticker-cache.json");
-
 describe("sticker-cache", () => {
   beforeEach(() => {
-    // Clean up before each test
-    if (fs.existsSync(TEST_CACHE_FILE)) {
-      fs.unlinkSync(TEST_CACHE_FILE);
-    }
+    resetStickerCacheForTest();
   });
 
   afterEach(() => {
-    // Clean up after each test
-    if (fs.existsSync(TEST_CACHE_FILE)) {
-      fs.unlinkSync(TEST_CACHE_FILE);
-    }
+    resetStickerCacheForTest();
   });
 
   describe("getCachedSticker", () => {
@@ -65,8 +55,7 @@ describe("sticker-cache", () => {
       cacheSticker(sticker);
       expect(getCachedSticker("unique123")).not.toBeNull();
 
-      // Manually clear the cache file
-      fs.unlinkSync(TEST_CACHE_FILE);
+      resetStickerCacheForTest();
 
       expect(getCachedSticker("unique123")).toBeNull();
     });

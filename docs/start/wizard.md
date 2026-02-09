@@ -49,7 +49,7 @@ The wizard starts with **QuickStart** (defaults) vs **Advanced** (full control).
     - Local gateway (loopback)
     - Workspace default (or existing workspace)
     - Gateway port **18789**
-    - Gateway auth **Token** (auto‑generated, even on loopback)
+    - Gateway auth **Password** (auto‑generated, even on loopback)
     - Tailscale exposure **Off**
     - Telegram + WhatsApp DMs default to **allowlist** (you'll be prompted for your phone number)
   </Tab>

@@ -139,6 +139,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       name: string;
       installId: string;
       timeoutMs?: number;
+      allowUnsafe?: boolean;
     };
     const cfg = loadConfig();
     const workspaceDirRaw = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
@@ -147,13 +148,11 @@ export const skillsHandlers: GatewayRequestHandlers = {
       skillName: p.name,
       installId: p.installId,
       timeoutMs: p.timeoutMs,
+      allowUnsafe: p.allowUnsafe,
       config: cfg,
     });
-    respond(
-      result.ok,
-      result,
-      result.ok ? undefined : errorShape(ErrorCodes.UNAVAILABLE, result.message),
-    );
+    const ok = result.ok || result.requiresConfirmation === true;
+    respond(ok, result, ok ? undefined : errorShape(ErrorCodes.UNAVAILABLE, result.message));
   },
   "skills.update": async ({ params, respond }) => {
     if (!validateSkillsUpdateParams(params)) {

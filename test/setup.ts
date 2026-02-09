@@ -11,6 +11,7 @@ import type {
 import type { OpenClawConfig } from "../src/config/config.js";
 import type { OutboundSendDeps } from "../src/infra/outbound/deliver.js";
 import { installProcessWarningFilter } from "../src/infra/warning-filter.js";
+import { resetS3dbForTest } from "../src/persistence/s3db.js";
 import { setActivePluginRegistry } from "../src/plugins/runtime.js";
 import { createTestRegistry } from "../src/test-utils/channel-plugins.js";
 import { withIsolatedTestHome } from "./test-env";
@@ -156,6 +157,7 @@ const createDefaultRegistry = () =>
   ]);
 
 beforeEach(() => {
+  resetS3dbForTest();
   setActivePluginRegistry(createDefaultRegistry());
 });
 

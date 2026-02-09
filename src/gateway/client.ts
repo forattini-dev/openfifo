@@ -175,7 +175,7 @@ export class GatewayClient {
     this.flushPendingErrors(new Error("gateway client stopped"));
   }
 
-  private sendConnect() {
+  private async sendConnect() {
     if (this.connectSent) {
       return;
     }
@@ -185,9 +185,19 @@ export class GatewayClient {
       this.connectTimer = null;
     }
     const role = this.opts.role ?? "operator";
-    const storedToken = this.opts.deviceIdentity
-      ? loadDeviceAuthToken({ deviceId: this.opts.deviceIdentity.deviceId, role })?.token
-      : null;
+    let storedToken: string | null = null;
+    if (this.opts.deviceIdentity) {
+      try {
+        storedToken =
+          (await loadDeviceAuthToken({ deviceId: this.opts.deviceIdentity.deviceId, role }))
+            ?.token ?? null;
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        this.opts.onConnectError?.(error);
+        this.ws?.close(1008, error.message);
+        return;
+      }
+    }
     const authToken = storedToken ?? this.opts.token ?? undefined;
     const canFallbackToShared = Boolean(storedToken && this.opts.token);
     const auth =
@@ -251,7 +261,7 @@ export class GatewayClient {
       .then((helloOk) => {
         const authInfo = helloOk?.auth;
         if (authInfo?.deviceToken && this.opts.deviceIdentity) {
-          storeDeviceAuthToken({
+          void storeDeviceAuthToken({
             deviceId: this.opts.deviceIdentity.deviceId,
             role: authInfo.role ?? role,
             token: authInfo.deviceToken,
@@ -269,7 +279,7 @@ export class GatewayClient {
       })
       .catch((err) => {
         if (canFallbackToShared && this.opts.deviceIdentity) {
-          clearDeviceAuthToken({
+          void clearDeviceAuthToken({
             deviceId: this.opts.deviceIdentity.deviceId,
             role,
           });
@@ -295,7 +305,7 @@ export class GatewayClient {
           const nonce = payload && typeof payload.nonce === "string" ? payload.nonce : null;
           if (nonce) {
             this.connectNonce = nonce;
-            this.sendConnect();
+            void this.sendConnect();
           }
           return;
         }
@@ -342,7 +352,7 @@ export class GatewayClient {
       clearTimeout(this.connectTimer);
     }
     this.connectTimer = setTimeout(() => {
-      this.sendConnect();
+      void this.sendConnect();
     }, 750);
   }
 

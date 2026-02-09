@@ -797,7 +797,7 @@
               },
               {
                 "group": "Core concepts",
-                "pages": ["concepts/features"]
+                "pages": ["concepts/features", "concepts/openfifo"]
               },
               {
                 "group": "First steps",
@@ -819,6 +819,10 @@
               {
                 "group": "Other install methods",
                 "pages": ["install/docker", "install/nix", "install/ansible", "install/bun"]
+              },
+              {
+                "group": "Deploy",
+                "pages": ["deploy/proxies"]
               },
               {
                 "group": "Maintenance",

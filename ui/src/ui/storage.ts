@@ -4,7 +4,6 @@ import type { ThemeMode } from "./theme.ts";
 
 export type UiSettings = {
   gatewayUrl: string;
-  token: string;
   sessionKey: string;
   lastActiveSessionKey: string;
   theme: ThemeMode;
@@ -23,7 +22,6 @@ export function loadSettings(): UiSettings {
 
   const defaults: UiSettings = {
     gatewayUrl: defaultUrl,
-    token: "",
     sessionKey: "main",
     lastActiveSessionKey: "main",
     theme: "system",
@@ -45,7 +43,6 @@ export function loadSettings(): UiSettings {
         typeof parsed.gatewayUrl === "string" && parsed.gatewayUrl.trim()
           ? parsed.gatewayUrl.trim()
           : defaults.gatewayUrl,
-      token: typeof parsed.token === "string" ? parsed.token : defaults.token,
       sessionKey:
         typeof parsed.sessionKey === "string" && parsed.sessionKey.trim()
           ? parsed.sessionKey.trim()

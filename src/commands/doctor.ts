@@ -126,21 +126,75 @@ export async function doctorCommand(
       authConfig: cfg.gateway?.auth,
       tailscaleMode: cfg.gateway?.tailscale?.mode ?? "off",
     });
-    const needsToken = auth.mode !== "password" && (auth.mode !== "token" || !auth.token);
+    const configuredMode = cfg.gateway?.auth?.mode;
+    const hasPassword = Boolean(auth.password?.trim());
+    const hasToken = Boolean(auth.token?.trim());
+    const needsPassword =
+      auth.mode !== "proxy" &&
+      (configuredMode === undefined || configuredMode === "password") &&
+      !hasPassword;
+    const needsToken =
+      configuredMode === "token" && !hasToken && auth.mode !== "proxy" && !auth.allowTailscale;
+
+    if (options.generateGatewayToken === true) {
+      const nextToken = randomToken();
+      cfg = {
+        ...cfg,
+        gateway: {
+          ...cfg.gateway,
+          auth: {
+            ...cfg.gateway?.auth,
+            mode: "token",
+            token: nextToken,
+          },
+        },
+      };
+      note("Gateway token configured.", "Gateway auth");
+      return;
+    }
+
+    if (needsPassword) {
+      note(
+        "Gateway auth is off or missing a password. Password auth is recommended for the Control UI (including loopback).",
+        "Gateway auth",
+      );
+      const shouldSetPassword =
+        options.nonInteractive === true
+          ? false
+          : await prompter.confirmRepair({
+              message: "Generate and configure a gateway password now?",
+              initialValue: true,
+            });
+      if (shouldSetPassword) {
+        const nextPassword = randomToken();
+        cfg = {
+          ...cfg,
+          gateway: {
+            ...cfg.gateway,
+            auth: {
+              ...cfg.gateway?.auth,
+              mode: "password",
+              password: nextPassword,
+            },
+          },
+        };
+        note("Gateway password configured.", "Gateway auth");
+      }
+      return;
+    }
+
     if (needsToken) {
       note(
-        "Gateway auth is off or missing a token. Token auth is now the recommended default (including loopback).",
+        "Gateway auth is set to token but the token is missing. Token auth is for non-browser clients only.",
         "Gateway auth",
       );
       const shouldSetToken =
-        options.generateGatewayToken === true
-          ? true
-          : options.nonInteractive === true
-            ? false
-            : await prompter.confirmRepair({
-                message: "Generate and configure a gateway token now?",
-                initialValue: true,
-              });
+        options.nonInteractive === true
+          ? false
+          : await prompter.confirmRepair({
+              message: "Generate and configure a gateway token now?",
+              initialValue: false,
+            });
       if (shouldSetToken) {
         const nextToken = randomToken();
         cfg = {

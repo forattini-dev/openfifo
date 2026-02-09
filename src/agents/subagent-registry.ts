@@ -35,9 +35,9 @@ let listenerStop: (() => void) | null = null;
 var restoreAttempted = false;
 const SUBAGENT_ANNOUNCE_TIMEOUT_MS = 120_000;
 
-function persistSubagentRuns() {
+async function persistSubagentRuns() {
   try {
-    saveSubagentRegistryToDisk(subagentRuns);
+    await saveSubagentRegistryToDisk(subagentRuns);
   } catch {
     // ignore persistence failures
   }
@@ -90,13 +90,13 @@ function resumeSubagentRun(runId: string) {
   resumedRuns.add(runId);
 }
 
-function restoreSubagentRunsOnce() {
+async function restoreSubagentRunsOnce() {
   if (restoreAttempted) {
     return;
   }
   restoreAttempted = true;
   try {
-    const restored = loadSubagentRegistryFromDisk();
+    const restored = await loadSubagentRegistryFromDisk();
     if (restored.size === 0) {
       return;
     }
@@ -177,7 +177,7 @@ async function sweepSubagentRuns() {
     }
   }
   if (mutated) {
-    persistSubagentRuns();
+    void persistSubagentRuns();
   }
   if (subagentRuns.size === 0) {
     stopSweeper();
@@ -202,7 +202,7 @@ function ensureListener() {
       const startedAt = typeof evt.data?.startedAt === "number" ? evt.data.startedAt : undefined;
       if (startedAt) {
         entry.startedAt = startedAt;
-        persistSubagentRuns();
+        void persistSubagentRuns();
       }
       return;
     }
@@ -217,7 +217,7 @@ function ensureListener() {
     } else {
       entry.outcome = { status: "ok" };
     }
-    persistSubagentRuns();
+    void persistSubagentRuns();
 
     if (!beginSubagentCleanup(evt.runId)) {
       return;
@@ -251,16 +251,16 @@ function finalizeSubagentCleanup(runId: string, cleanup: "delete" | "keep", didA
   if (!didAnnounce) {
     // Allow retry on the next wake if announce was deferred or failed.
     entry.cleanupHandled = false;
-    persistSubagentRuns();
+    void persistSubagentRuns();
     return;
   }
   if (cleanup === "delete") {
     subagentRuns.delete(runId);
-    persistSubagentRuns();
+    void persistSubagentRuns();
     return;
   }
   entry.cleanupCompletedAt = Date.now();
-  persistSubagentRuns();
+  void persistSubagentRuns();
 }
 
 function beginSubagentCleanup(runId: string) {
@@ -275,7 +275,7 @@ function beginSubagentCleanup(runId: string) {
     return false;
   }
   entry.cleanupHandled = true;
-  persistSubagentRuns();
+  void persistSubagentRuns();
   return true;
 }
 
@@ -311,7 +311,7 @@ export function registerSubagentRun(params: {
     cleanupHandled: false,
   });
   ensureListener();
-  persistSubagentRuns();
+  void persistSubagentRuns();
   if (archiveAfterMs) {
     startSweeper();
   }
@@ -361,7 +361,7 @@ async function waitForSubagentCompletion(runId: string, waitTimeoutMs: number) {
       wait.status === "error" ? { status: "error", error: waitError } : { status: "ok" };
     mutated = true;
     if (mutated) {
-      persistSubagentRuns();
+      void persistSubagentRuns();
     }
     if (!beginSubagentCleanup(runId)) {
       return;
@@ -399,18 +399,18 @@ export function resetSubagentRegistryForTests() {
     listenerStop = null;
   }
   listenerStarted = false;
-  persistSubagentRuns();
+  void persistSubagentRuns();
 }
 
 export function addSubagentRunForTests(entry: SubagentRunRecord) {
   subagentRuns.set(entry.runId, entry);
-  persistSubagentRuns();
+  void persistSubagentRuns();
 }
 
 export function releaseSubagentRun(runId: string) {
   const didDelete = subagentRuns.delete(runId);
   if (didDelete) {
-    persistSubagentRuns();
+    void persistSubagentRuns();
   }
   if (subagentRuns.size === 0) {
     stopSweeper();
@@ -426,5 +426,5 @@ export function listSubagentRunsForRequester(requesterSessionKey: string): Subag
 }
 
 export function initSubagentRegistry() {
-  restoreSubagentRunsOnce();
+  void restoreSubagentRunsOnce();
 }

@@ -37,15 +37,14 @@ export function renderOverview(props: OverviewProps) {
     if (!authFailed) {
       return null;
     }
-    const hasToken = Boolean(props.settings.token.trim());
     const hasPassword = Boolean(props.password.trim());
-    if (!hasToken && !hasPassword) {
+    if (!hasPassword) {
       return html`
         <div class="muted" style="margin-top: 8px">
-          This gateway requires auth. Add a token or password, then click Connect.
+          This gateway requires auth. Add a password (or use proxy auth), then click Connect.
           <div style="margin-top: 6px">
             <span class="mono">openclaw dashboard --no-open</span> → open the Control UI<br />
-            <span class="mono">openclaw doctor --generate-gateway-token</span> → set token
+            <span class="mono">openclaw configure --section gateway</span> → set a password
           </div>
           <div style="margin-top: 6px">
             <a
@@ -62,7 +61,7 @@ export function renderOverview(props: OverviewProps) {
     }
     return html`
       <div class="muted" style="margin-top: 8px">
-        Auth failed. Update the token or password in Control UI settings, then click Connect.
+        Auth failed. Update the password (or proxy auth), then click Connect.
         <div style="margin-top: 6px">
           <a
             class="session-link"
@@ -94,7 +93,7 @@ export function renderOverview(props: OverviewProps) {
         <span class="mono">http://127.0.0.1:18789</span> on the gateway host.
         <div style="margin-top: 6px">
           If you must stay on HTTP, set
-          <span class="mono">gateway.controlUi.allowInsecureAuth: true</span> (token-only).
+          <span class="mono">gateway.controlUi.allowInsecureAuth: true</span> (password-only).
         </div>
         <div style="margin-top: 6px">
           <a
@@ -134,17 +133,6 @@ export function renderOverview(props: OverviewProps) {
                 props.onSettingsChange({ ...props.settings, gatewayUrl: v });
               }}
               placeholder="ws://100.x.y.z:18789"
-            />
-          </label>
-          <label class="field">
-            <span>Gateway Token</span>
-            <input
-              .value=${props.settings.token}
-              @input=${(e: Event) => {
-                const v = (e.target as HTMLInputElement).value;
-                props.onSettingsChange({ ...props.settings, token: v });
-              }}
-              placeholder="OPENCLAW_GATEWAY_TOKEN"
             />
           </label>
           <label class="field">

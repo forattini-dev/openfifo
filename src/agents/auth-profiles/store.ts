@@ -1,14 +1,105 @@
 import type { OAuthCredentials } from "@mariozechner/pi-ai";
+import crypto from "node:crypto";
 import fs from "node:fs";
-import lockfile from "proper-lockfile";
 import type { AuthProfileCredential, AuthProfileStore, ProfileUsageStats } from "./types.js";
 import { resolveOAuthPath } from "../../config/paths.js";
 import { loadJsonFile, saveJsonFile } from "../../infra/json-file.js";
-import { AUTH_STORE_LOCK_OPTIONS, AUTH_STORE_VERSION, log } from "./constants.js";
+import { buildS3dbKey, getS3dbStorage } from "../../persistence/s3db.js";
+import { AUTH_STORE_VERSION, log } from "./constants.js";
 import { syncExternalCliCredentials } from "./external-cli-sync.js";
 import { ensureAuthStoreFile, resolveAuthStorePath, resolveLegacyAuthStorePath } from "./paths.js";
 
 type LegacyAuthStore = Record<string, AuthProfileCredential>;
+
+const AUTH_STORE_NAMESPACE = "auth-profiles/store";
+
+type AuthProfileStoreEnvelope = {
+  version: number;
+  updatedAt: number;
+  store: AuthProfileStore;
+};
+
+function resolveAuthStoreKey(authPath: string): string {
+  return buildS3dbKey(AUTH_STORE_NAMESPACE, authPath);
+}
+
+export function resolveAuthStoreLockName(authPath: string): string {
+  const normalized = authPath.replace(/\\/g, "/");
+  const hash = crypto.createHash("sha256").update(normalized).digest("hex").slice(0, 16);
+  return `auth-profiles:${hash}`;
+}
+
+function coerceAuthProfileStoreEnvelope(
+  raw: Record<string, unknown> | null,
+): AuthProfileStoreEnvelope | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  const store = coerceAuthStore(record.store ?? record);
+  if (!store) {
+    return null;
+  }
+  const updatedAt =
+    typeof record.updatedAt === "number" && Number.isFinite(record.updatedAt)
+      ? record.updatedAt
+      : 0;
+  return {
+    version: Number(record.version ?? store.version ?? AUTH_STORE_VERSION),
+    updatedAt,
+    store,
+  };
+}
+
+async function readAuthProfileStoreFromS3db(
+  authPath: string,
+): Promise<AuthProfileStoreEnvelope | null> {
+  const storage = await getS3dbStorage();
+  const key = resolveAuthStoreKey(authPath);
+  const raw = await storage.get(key);
+  return coerceAuthProfileStoreEnvelope(raw);
+}
+
+async function persistAuthProfileStoreToS3db(
+  authPath: string,
+  store: AuthProfileStore,
+): Promise<void> {
+  const storage = await getS3dbStorage();
+  const key = resolveAuthStoreKey(authPath);
+  const payload: AuthProfileStoreEnvelope = {
+    version: AUTH_STORE_VERSION,
+    updatedAt: Date.now(),
+    store,
+  };
+  await storage.set(key, payload as unknown as Record<string, unknown>, { behavior: "body-only" });
+}
+
+export async function hydrateAuthProfileStoreFromS3db(authPath: string): Promise<boolean> {
+  const remote = await readAuthProfileStoreFromS3db(authPath);
+  if (!remote) {
+    return false;
+  }
+  let localMtime = 0;
+  try {
+    const stat = await fs.promises.stat(authPath);
+    localMtime = stat.mtimeMs ?? 0;
+  } catch {
+    localMtime = 0;
+  }
+  if (localMtime >= remote.updatedAt && localMtime > 0) {
+    return true;
+  }
+  saveJsonFile(authPath, remote.store);
+  try {
+    const ts = remote.updatedAt / 1000;
+    if (Number.isFinite(ts) && ts > 0) {
+      await fs.promises.utimes(authPath, ts, ts);
+    }
+  } catch {
+    // best-effort
+  }
+  return true;
+}
 
 function _syncAuthProfileStore(target: AuthProfileStore, source: AuthProfileStore): void {
   target.version = source.version;
@@ -25,9 +116,15 @@ export async function updateAuthProfileStoreWithLock(params: {
   const authPath = resolveAuthStorePath(params.agentDir);
   ensureAuthStoreFile(authPath);
 
-  let release: (() => Promise<void>) | undefined;
+  let lock: { token: string } | null = null;
   try {
-    release = await lockfile.lock(authPath, AUTH_STORE_LOCK_OPTIONS);
+    const storage = await getS3dbStorage();
+    const lockName = resolveAuthStoreLockName(authPath);
+    lock = await storage.acquireLock(lockName, { timeout: 10_000, ttl: 30 });
+    if (!lock) {
+      return null;
+    }
+    await hydrateAuthProfileStoreFromS3db(authPath);
     const store = ensureAuthProfileStore(params.agentDir);
     const shouldSave = params.updater(store);
     if (shouldSave) {
@@ -37,9 +134,10 @@ export async function updateAuthProfileStoreWithLock(params: {
   } catch {
     return null;
   } finally {
-    if (release) {
+    if (lock) {
       try {
-        await release();
+        const storage = await getS3dbStorage();
+        await storage.releaseLock(lock);
       } catch {
         // ignore unlock errors
       }
@@ -200,7 +298,7 @@ export function loadAuthProfileStore(): AuthProfileStore {
     // Sync from external CLI tools on every load
     const synced = syncExternalCliCredentials(asStore);
     if (synced) {
-      saveJsonFile(authPath, asStore);
+      saveAuthProfileStore(asStore);
     }
     return asStore;
   }
@@ -243,12 +341,18 @@ export function loadAuthProfileStore(): AuthProfileStore {
         };
       }
     }
-    syncExternalCliCredentials(store);
+    const synced = syncExternalCliCredentials(store);
+    if (synced || legacy) {
+      saveAuthProfileStore(store);
+    }
     return store;
   }
 
   const store: AuthProfileStore = { version: AUTH_STORE_VERSION, profiles: {} };
-  syncExternalCliCredentials(store);
+  const synced = syncExternalCliCredentials(store);
+  if (synced) {
+    saveAuthProfileStore(store);
+  }
   return store;
 }
 
@@ -263,7 +367,7 @@ function loadAuthProfileStoreForAgent(
     // Sync from external CLI tools on every load
     const synced = syncExternalCliCredentials(asStore);
     if (synced) {
-      saveJsonFile(authPath, asStore);
+      saveAuthProfileStore(asStore, agentDir);
     }
     return asStore;
   }
@@ -275,7 +379,7 @@ function loadAuthProfileStoreForAgent(
     const mainStore = coerceAuthStore(mainRaw);
     if (mainStore && Object.keys(mainStore.profiles).length > 0) {
       // Clone main store to subagent directory for auth inheritance
-      saveJsonFile(authPath, mainStore);
+      saveAuthProfileStore(mainStore, agentDir);
       log.info("inherited auth-profiles from main agent", { agentDir });
       return mainStore;
     }
@@ -325,7 +429,7 @@ function loadAuthProfileStoreForAgent(
   const syncedCli = syncExternalCliCredentials(store);
   const shouldWrite = legacy !== null || mergedOAuth || syncedCli;
   if (shouldWrite) {
-    saveJsonFile(authPath, store);
+    saveAuthProfileStore(store, agentDir);
   }
 
   // PR #368: legacy auth.json could get re-migrated from other agent dirs,
@@ -375,4 +479,7 @@ export function saveAuthProfileStore(store: AuthProfileStore, agentDir?: string)
     usageStats: store.usageStats ?? undefined,
   } satisfies AuthProfileStore;
   saveJsonFile(authPath, payload);
+  void persistAuthProfileStoreToS3db(authPath, payload).catch((err) => {
+    log.warn("failed to persist auth profile store to s3db", { err: String(err) });
+  });
 }
