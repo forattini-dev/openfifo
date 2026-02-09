@@ -130,10 +130,22 @@ const FIELD_LABELS: Record<string, string> = {
   "gateway.remote.sshIdentity": "Remote Gateway SSH Identity",
   "gateway.remote.token": "Remote Gateway Token",
   "gateway.remote.password": "Remote Gateway Password",
+  "gateway.remote.basic.user": "Remote Gateway Basic User",
+  "gateway.remote.basic.password": "Remote Gateway Basic Password",
   "gateway.remote.tlsFingerprint": "Remote Gateway TLS Fingerprint",
   "gateway.auth.mode": "Gateway Auth Mode",
   "gateway.auth.token": "Gateway Token",
   "gateway.auth.password": "Gateway Password",
+  "gateway.auth.basic.user": "Gateway Basic Auth User",
+  "gateway.auth.basic.password": "Gateway Basic Auth Password",
+  "gateway.auth.oauth2.issuer": "Gateway OAuth2 Issuer",
+  "gateway.auth.oauth2.audience": "Gateway OAuth2 Audience",
+  "gateway.auth.oauth2.jwksUrl": "Gateway OAuth2 JWKS URL",
+  "gateway.auth.oauth2.requiredScopes": "Gateway OAuth2 Required Scopes",
+  "gateway.auth.oauth2.requiredRoles": "Gateway OAuth2 Required Roles",
+  "gateway.auth.oauth2.userClaim": "Gateway OAuth2 User Claim",
+  "gateway.auth.oauth2.scopesClaim": "Gateway OAuth2 Scopes Claim",
+  "gateway.auth.oauth2.rolesClaim": "Gateway OAuth2 Roles Claim",
   "gateway.auth.proxy.userHeader": "Gateway Proxy User Header",
   "gateway.auth.proxy.emailHeader": "Gateway Proxy Email Header",
   "gateway.auth.proxy.nameHeader": "Gateway Proxy Name Header",
@@ -414,6 +426,8 @@ const FIELD_HELP: Record<string, string> = {
   "gateway.remote.sshTarget":
     "Remote gateway over SSH (tunnels the gateway port to localhost). Format: user@host or user@host:port.",
   "gateway.remote.sshIdentity": "Optional SSH identity file path (passed to ssh -i).",
+  "gateway.remote.basic.user": "Basic auth username for remote CLI connections.",
+  "gateway.remote.basic.password": "Basic auth password for remote CLI connections.",
   "agents.list.*.skills":
     "Optional allowlist of skills for this agent (omit = all skills; empty = no skills).",
   "agents.list[].skills":
@@ -423,10 +437,24 @@ const FIELD_HELP: Record<string, string> = {
   "discovery.mdns.mode":
     'mDNS broadcast mode ("minimal" default, "full" includes cliPath/sshPort, "off" disables mDNS).',
   "gateway.auth.mode":
-    'Gateway auth mode ("token", "password", or "proxy"). Use "proxy" for OAuth2/SSO reverse proxies.',
+    'Gateway auth mode ("token", "password", "basic", "oauth2", or "proxy"). Use "proxy" for OAuth2/SSO reverse proxies.',
   "gateway.auth.token":
     "Required by default for gateway access (unless using Tailscale Serve identity); required for non-loopback binds.",
   "gateway.auth.password": "Required for Tailscale funnel.",
+  "gateway.auth.basic.user": "HTTP basic auth username.",
+  "gateway.auth.basic.password": "HTTP basic auth password.",
+  "gateway.auth.oauth2.issuer":
+    "OIDC issuer URL used to validate bearer tokens (can discover JWKS automatically).",
+  "gateway.auth.oauth2.audience": "Expected OAuth2/OIDC audience claim(s).",
+  "gateway.auth.oauth2.jwksUrl": "JWKS endpoint override (skip issuer discovery).",
+  "gateway.auth.oauth2.requiredScopes": "Space/comma-separated list of required OAuth2 scopes.",
+  "gateway.auth.oauth2.requiredRoles": "Required role names from the token claims.",
+  "gateway.auth.oauth2.userClaim":
+    "Claim to treat as the authenticated user (default: preferred_username/email/sub). Dot-notation allowed.",
+  "gateway.auth.oauth2.scopesClaim":
+    "Claim to read scopes from (default: scope/scp). Dot-notation allowed.",
+  "gateway.auth.oauth2.rolesClaim":
+    "Claim to read roles from (default: roles/role). Dot-notation allowed.",
   "gateway.auth.proxy.userHeader":
     "Header containing the authenticated user when gateway.auth.mode=proxy (default: x-auth-request-user).",
   "gateway.auth.proxy.emailHeader":

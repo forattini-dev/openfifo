@@ -7,6 +7,8 @@ export type GatewayRpcOpts = {
   url?: string;
   token?: string;
   password?: string;
+  basicUser?: string;
+  basicPassword?: string;
   timeout?: string;
   expectFinal?: boolean;
   json?: boolean;
@@ -17,6 +19,8 @@ export const gatewayCallOpts = (cmd: Command) =>
     .option("--url <url>", "Gateway WebSocket URL (defaults to gateway.remote.url when configured)")
     .option("--token <token>", "Gateway token (if required)")
     .option("--password <password>", "Gateway password (password auth)")
+    .option("--basic-user <user>", "Gateway basic auth user")
+    .option("--basic-password <password>", "Gateway basic auth password")
     .option("--timeout <ms>", "Timeout in ms", "10000")
     .option("--expect-final", "Wait for final response (agent)", false)
     .option("--json", "Output JSON", false);
@@ -33,6 +37,8 @@ export const callGatewayCli = async (method: string, opts: GatewayRpcOpts, param
         url: opts.url,
         token: opts.token,
         password: opts.password,
+        basicUser: opts.basicUser,
+        basicPassword: opts.basicPassword,
         method,
         params,
         expectFinal: Boolean(opts.expectFinal),

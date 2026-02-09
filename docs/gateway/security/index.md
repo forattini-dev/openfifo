@@ -436,14 +436,22 @@ Auth modes:
 
 - `gateway.auth.mode: "token"`: shared bearer token (for non-browser clients; Control UI does not accept tokens).
 - `gateway.auth.mode: "password"`: password auth (recommended for Control UI; prefer `OPENCLAW_GATEWAY_PASSWORD`).
+- `gateway.auth.mode: "basic"`: HTTP basic auth (username + password).
+- `gateway.auth.mode: "oauth2"`: OAuth2/OIDC bearer token validation (JWT + JWKS).
 - `gateway.auth.mode: "proxy"`: proxy auth via injected headers (requires `gateway.trustedProxies`).
 
-Rotation checklist (token/password):
+Control UI supports password or proxy auth (or Tailscale Serve identity headers). Token/basic/oauth2
+are intended for non-browser clients.
+
+Rotation checklist (token/password/basic):
 
 1. Generate/set a new secret (`gateway.auth.token` or `OPENCLAW_GATEWAY_PASSWORD`).
 2. Restart the Gateway (or restart the macOS app if it supervises the Gateway).
 3. Update any remote clients (`gateway.remote.token` / `.password` on machines that call into the Gateway).
 4. Verify you can no longer connect with the old credentials.
+
+For OAuth2/OIDC, rotate keys/tokens at your identity provider and update
+`gateway.auth.oauth2` if issuer/audience/JWKS change.
 
 ### 0.6) Tailscale Serve identity headers
 

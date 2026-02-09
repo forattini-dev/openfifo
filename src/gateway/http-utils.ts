@@ -22,6 +22,32 @@ export function getBearerToken(req: IncomingMessage): string | undefined {
   return token || undefined;
 }
 
+export type BasicAuth = { user: string; password: string };
+
+export function getBasicAuth(req: IncomingMessage): BasicAuth | undefined {
+  const raw = getHeader(req, "authorization")?.trim() ?? "";
+  if (!raw.toLowerCase().startsWith("basic ")) {
+    return undefined;
+  }
+  const encoded = raw.slice(6).trim();
+  if (!encoded) {
+    return undefined;
+  }
+  let decoded = "";
+  try {
+    decoded = Buffer.from(encoded, "base64").toString("utf8");
+  } catch {
+    return undefined;
+  }
+  const sep = decoded.indexOf(":");
+  if (sep < 0) {
+    return undefined;
+  }
+  const user = decoded.slice(0, sep);
+  const password = decoded.slice(sep + 1);
+  return { user, password };
+}
+
 export function resolveAgentIdFromHeader(req: IncomingMessage): string | undefined {
   const raw =
     getHeader(req, "x-openclaw-agent-id")?.trim() ||

@@ -28,7 +28,7 @@ Auth is supplied during the WebSocket handshake via:
 - `connect.params.auth.password` (shared password)
 - **Proxy auth headers** when `gateway.auth.mode="proxy"` and the request arrives through a trusted reverse proxy
 
-The Control UI **does not accept token auth**. Use a password or proxy auth (or Tailscale identity headers).
+The Control UI **does not accept token/basic/oauth2 auth**. Use a password or proxy auth (or Tailscale identity headers).
 
 ## Device pairing (first connection)
 

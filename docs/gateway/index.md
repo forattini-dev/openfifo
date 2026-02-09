@@ -42,7 +42,7 @@ pnpm gateway:watch
 - `--force` uses `lsof` to find listeners on the chosen port, sends SIGTERM, logs what it killed, then starts the gateway (fails fast if `lsof` is missing).
 - If you run under a supervisor (launchd/systemd/mac app child-process mode), a stop/restart typically sends **SIGTERM**; older builds may surface this as `pnpm` `ELIFECYCLE` exit code **143** (SIGTERM), which is a normal shutdown, not a crash.
 - **SIGUSR1** triggers an in-process restart when authorized (gateway tool/config apply/update, or enable `commands.restart` for manual restarts).
-- Gateway auth is required by default: set `gateway.auth.password` (recommended for the Control UI), or configure `gateway.auth.mode="proxy"`. Non-browser clients may still use `gateway.auth.token`. Clients must send `connect.params.auth.password` unless using Tailscale Serve identity or proxy auth headers.
+- Gateway auth is required by default: set `gateway.auth.password` (recommended for the Control UI), or configure `gateway.auth.mode="proxy"`. You can also use `gateway.auth.mode="basic"` or `gateway.auth.mode="oauth2"` for non-browser clients. Clients must send `connect.params.auth.password` (or matching basic/oauth2 auth) unless using Tailscale Serve identity or proxy auth headers.
 - The wizard now generates a password by default, even on loopback.
 - Port precedence: `--port` > `OPENCLAW_GATEWAY_PORT` > `gateway.port` > default `18789`.
 

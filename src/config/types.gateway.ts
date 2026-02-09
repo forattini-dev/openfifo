@@ -76,7 +76,33 @@ export type GatewayControlUiConfig = {
   dangerouslyDisableDeviceAuth?: boolean;
 };
 
-export type GatewayAuthMode = "token" | "password" | "proxy";
+export type GatewayAuthMode = "token" | "password" | "proxy" | "basic" | "oauth2";
+
+export type GatewayAuthBasicConfig = {
+  /** HTTP basic auth username. */
+  user?: string;
+  /** HTTP basic auth password. */
+  password?: string;
+};
+
+export type GatewayAuthOauth2Config = {
+  /** OIDC issuer URL (used for discovery and JWT validation). */
+  issuer?: string;
+  /** Expected JWT audience claim(s). */
+  audience?: string | string[];
+  /** JWKS endpoint override (skips OIDC discovery). */
+  jwksUrl?: string;
+  /** Required OAuth2 scopes (space/comma separated). */
+  requiredScopes?: string[];
+  /** Required roles/claims for access. */
+  requiredRoles?: string[];
+  /** Claim to treat as the user identifier (default: preferred_username/email/sub). Dot-notation allowed. */
+  userClaim?: string;
+  /** Claim name to read scopes from (default: scope/scp). Dot-notation allowed. */
+  scopesClaim?: string;
+  /** Claim name to read roles from (default: roles/role). Dot-notation allowed. */
+  rolesClaim?: string;
+};
 
 export type GatewayAuthProxyConfig = {
   /** Header that contains the authenticated user identifier (default: x-auth-request-user). */
@@ -98,6 +124,10 @@ export type GatewayAuthConfig = {
   token?: string;
   /** Shared password for password mode (consider env instead). */
   password?: string;
+  /** HTTP basic auth config (username + password). */
+  basic?: GatewayAuthBasicConfig;
+  /** OAuth2/OIDC bearer token validation config. */
+  oauth2?: GatewayAuthOauth2Config;
   /** Allow Tailscale identity headers when serve mode is enabled. */
   allowTailscale?: boolean;
   /** Proxy auth headers for OAuth2/SSO gateways. */
@@ -122,6 +152,8 @@ export type GatewayRemoteConfig = {
   token?: string;
   /** Password for remote auth (when the gateway requires password auth). */
   password?: string;
+  /** Basic auth credentials (when the gateway requires basic auth). */
+  basic?: GatewayAuthBasicConfig;
   /** Expected TLS certificate fingerprint (sha256) for remote gateways. */
   tlsFingerprint?: string;
   /** SSH target for tunneling remote Gateway (user@host). */

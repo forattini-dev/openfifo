@@ -21,7 +21,11 @@ import { isTestDefaultMemorySlotDisabled } from "../plugins/config-state.js";
 import { getPluginToolMeta } from "../plugins/tools.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
 import { normalizeMessageChannel } from "../utils/message-channel.js";
-import { authorizeGatewayConnect, type ResolvedGatewayAuth } from "./auth.js";
+import {
+  authorizeGatewayConnect,
+  resolveGatewayConnectAuthFromRequest,
+  type ResolvedGatewayAuth,
+} from "./auth.js";
 import {
   readJsonBodyOrError,
   sendInvalidRequest,
@@ -29,7 +33,7 @@ import {
   sendMethodNotAllowed,
   sendUnauthorized,
 } from "./http-common.js";
-import { getBearerToken, getHeader } from "./http-utils.js";
+import { getHeader } from "./http-utils.js";
 
 const DEFAULT_BODY_BYTES = 2 * 1024 * 1024;
 const MEMORY_TOOL_NAMES = new Set(["memory_search", "memory_get"]);
@@ -115,10 +119,10 @@ export async function handleToolsInvokeHttpRequest(
   }
 
   const cfg = loadConfig();
-  const token = getBearerToken(req);
+  const connectAuth = resolveGatewayConnectAuthFromRequest(req);
   const authResult = await authorizeGatewayConnect({
     auth: opts.auth,
-    connectAuth: token ? { token, password: token } : null,
+    connectAuth,
     req,
     trustedProxies: opts.trustedProxies ?? cfg.gateway?.trustedProxies,
   });

@@ -42,6 +42,9 @@ export type GatewayClientOptions = {
   url?: string; // ws://127.0.0.1:18789
   token?: string;
   password?: string;
+  bearerToken?: string;
+  basicUser?: string;
+  basicPassword?: string;
   instanceId?: string;
   clientName?: GatewayClientName;
   clientDisplayName?: string;
@@ -200,11 +203,18 @@ export class GatewayClient {
     }
     const authToken = storedToken ?? this.opts.token ?? undefined;
     const canFallbackToShared = Boolean(storedToken && this.opts.token);
+    const basicUser = this.opts.basicUser?.trim();
+    const basicPassword = this.opts.basicPassword?.trim();
+    const basic =
+      basicUser && basicPassword ? { user: basicUser, password: basicPassword } : undefined;
+    const bearer = this.opts.bearerToken?.trim() || undefined;
     const auth =
-      authToken || this.opts.password
+      authToken || this.opts.password || bearer || basic
         ? {
             token: authToken,
             password: this.opts.password,
+            bearer,
+            basic,
           }
         : undefined;
     const signedAtMs = Date.now();

@@ -22,7 +22,7 @@ Key references:
 
 Authentication is enforced at the WebSocket handshake via `connect.params.auth.password`
 or **proxy auth headers** when `gateway.auth.mode="proxy"`. The Control UI does **not**
-accept token auth. See `gateway.auth` in [Gateway configuration](/gateway/configuration).
+accept token/basic/oauth2 auth. See `gateway.auth` in [Gateway configuration](/gateway/configuration).
 
 Security note: the Control UI is an **admin surface** (chat, config, exec approvals).
 Do not expose it publicly. The UI stores the gateway URL in `localStorage` after first load;

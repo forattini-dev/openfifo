@@ -73,7 +73,7 @@ function resolveHostName(hostHeader?: string): string {
   return name ?? "";
 }
 
-type AuthProvidedKind = "token" | "password" | "none";
+type AuthProvidedKind = "token" | "password" | "basic" | "oauth2" | "none";
 
 function formatGatewayAuthFailureMessage(params: {
   authMode: ResolvedGatewayAuth["mode"];
@@ -97,6 +97,16 @@ function formatGatewayAuthFailureMessage(params: {
     : isControlUi || isWebchat
       ? "enter the password in Control UI settings"
       : "provide gateway auth password";
+  const basicHint = isCli
+    ? "set gateway.remote.basic.user/password to match gateway.auth.basic"
+    : isControlUi || isWebchat
+      ? "Control UI does not support basic auth; use password or proxy auth"
+      : "provide HTTP basic credentials";
+  const oauth2Hint = isCli
+    ? "set gateway.remote.token (or --token) to a valid OAuth2 bearer token"
+    : isControlUi || isWebchat
+      ? "Control UI does not support OAuth2 tokens directly; use password or proxy auth"
+      : "provide Authorization: Bearer <token>";
   const proxyHint =
     "ensure your auth proxy forwards a user header (x-auth-request-user) " +
     "and set gateway.trustedProxies to the proxy IPs";
@@ -110,6 +120,34 @@ function formatGatewayAuthFailureMessage(params: {
         return "unauthorized: proxy auth requires request headers";
       default:
         return `unauthorized: proxy auth required (${proxyHint})`;
+    }
+  }
+  if (authMode === "basic") {
+    switch (reason) {
+      case "basic_missing":
+        return `unauthorized: basic auth missing (${basicHint})`;
+      case "basic_mismatch":
+        return `unauthorized: basic auth mismatch (${basicHint})`;
+      case "basic_missing_config":
+        return "unauthorized: basic auth not configured on gateway (set gateway.auth.basic)";
+      default:
+        return `unauthorized: basic auth required (${basicHint})`;
+    }
+  }
+  if (authMode === "oauth2") {
+    switch (reason) {
+      case "oauth2_missing":
+        return `unauthorized: oauth2 token missing (${oauth2Hint})`;
+      case "oauth2_invalid":
+        return `unauthorized: oauth2 token invalid (${oauth2Hint})`;
+      case "oauth2_scopes_missing":
+        return "unauthorized: oauth2 token missing required scopes";
+      case "oauth2_roles_missing":
+        return "unauthorized: oauth2 token missing required roles";
+      case "oauth2_missing_config":
+        return "unauthorized: oauth2 not configured on gateway (set gateway.auth.oauth2)";
+      default:
+        return `unauthorized: oauth2 auth required (${oauth2Hint})`;
     }
   }
   switch (reason) {
@@ -142,6 +180,12 @@ function formatGatewayAuthFailureMessage(params: {
   }
   if (authMode === "password" && authProvided === "none") {
     return `unauthorized: gateway password missing (${passwordHint})`;
+  }
+  if (authMode === "basic" && authProvided === "none") {
+    return `unauthorized: basic auth missing (${basicHint})`;
+  }
+  if (authMode === "oauth2" && authProvided === "none") {
+    return `unauthorized: oauth2 token missing (${oauth2Hint})`;
   }
   return "unauthorized";
 }
@@ -418,7 +462,13 @@ export function attachGatewayWsMessageHandler(params: {
         let devicePublicKey: string | null = null;
         const hasTokenAuth = Boolean(connectParams.auth?.token);
         const hasPasswordAuth = Boolean(connectParams.auth?.password);
-        const hasSharedAuth = resolvedAuth.mode !== "proxy" && (hasTokenAuth || hasPasswordAuth);
+        const hasBasicAuth = Boolean(
+          connectParams.auth?.basic?.user || connectParams.auth?.basic?.password,
+        );
+        const hasBearerAuth = Boolean(connectParams.auth?.bearer);
+        const hasSharedAuth =
+          resolvedAuth.mode !== "proxy" &&
+          (hasTokenAuth || hasPasswordAuth || hasBasicAuth || hasBearerAuth);
         const allowInsecureControlUi =
           isControlUi && configSnapshot.gateway?.controlUi?.allowInsecureAuth === true;
         const disableControlUiDeviceAuth =
@@ -434,7 +484,14 @@ export function attachGatewayWsMessageHandler(params: {
         });
         let authOk = authResult.ok;
         let authMethod =
-          authResult.method ?? (resolvedAuth.mode === "password" ? "password" : "token");
+          authResult.method ??
+          (resolvedAuth.mode === "password"
+            ? "password"
+            : resolvedAuth.mode === "basic"
+              ? "basic"
+              : resolvedAuth.mode === "oauth2"
+                ? "oauth2"
+                : "token");
         const sharedAuthResult = hasSharedAuth
           ? await authorizeGatewayConnect({
               auth: { ...resolvedAuth, allowTailscale: false },
@@ -445,17 +502,27 @@ export function attachGatewayWsMessageHandler(params: {
           : null;
         const sharedAuthOk =
           sharedAuthResult?.ok === true &&
-          (sharedAuthResult.method === "token" || sharedAuthResult.method === "password");
+          (sharedAuthResult.method === "token" ||
+            sharedAuthResult.method === "password" ||
+            sharedAuthResult.method === "basic" ||
+            sharedAuthResult.method === "oauth2");
         const rejectUnauthorized = () => {
           setHandshakeState("failed");
           logWsControl.warn(
             `unauthorized conn=${connId} remote=${remoteAddr ?? "?"} client=${clientLabel} ${connectParams.client.mode} v${connectParams.client.version} reason=${authResult.reason ?? "unknown"}`,
           );
-          const authProvided: AuthProvidedKind = connectParams.auth?.token
-            ? "token"
-            : connectParams.auth?.password
-              ? "password"
-              : "none";
+          let authProvided: AuthProvidedKind = "none";
+          if (connectParams.auth?.basic) {
+            authProvided = "basic";
+          } else if (resolvedAuth.mode === "oauth2") {
+            if (connectParams.auth?.bearer || connectParams.auth?.token) {
+              authProvided = "oauth2";
+            }
+          } else if (connectParams.auth?.token) {
+            authProvided = "token";
+          } else if (connectParams.auth?.password) {
+            authProvided = "password";
+          }
           const authMessage = formatGatewayAuthFailureMessage({
             authMode: resolvedAuth.mode,
             authProvided,

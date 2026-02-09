@@ -3006,16 +3006,18 @@ Notes:
 - `gateway.port` controls the single multiplexed port used for WebSocket + HTTP (control UI, hooks, A2UI).
 - OpenAI Chat Completions endpoint: **disabled by default**; enable with `gateway.http.endpoints.chatCompletions.enabled: true`.
 - Precedence: `--port` > `OPENCLAW_GATEWAY_PORT` > `gateway.port` > default `18789`.
-- Gateway auth is required by default (password, proxy auth, or Tailscale Serve identity).
+- Gateway auth is required by default (password, basic, oauth2, proxy auth, or Tailscale Serve identity).
   Non-loopback binds require a shared password unless you use proxy auth.
 - The onboarding wizard generates a gateway password by default (even on loopback).
 - `gateway.remote.token` is **only** for remote CLI calls; it does not enable local gateway auth. `gateway.token` is ignored.
 
 Auth and Tailscale:
 
-- `gateway.auth.mode` sets the handshake requirements (`token`, `password`, or `proxy`). When unset, token auth is assumed.
+- `gateway.auth.mode` sets the handshake requirements (`token`, `password`, `basic`, `oauth2`, or `proxy`). When unset, token auth is assumed.
 - `gateway.auth.token` stores the shared token for token auth (used by non-browser clients).
 - `gateway.auth.password` can be set here, or via `OPENCLAW_GATEWAY_PASSWORD` (recommended for the Control UI).
+- `gateway.auth.basic.user` + `.password` set HTTP basic auth credentials (or use `OPENCLAW_GATEWAY_BASIC_USER` / `OPENCLAW_GATEWAY_BASIC_PASSWORD`).
+- `gateway.auth.oauth2.*` configures OAuth2/OIDC JWT validation (issuer, audience, JWKS URL, optional scopes/roles).
 - `gateway.auth.proxy.*` configures header names for proxy auth (requires `gateway.trustedProxies`).
 - When `gateway.auth.mode` is set, only that method is accepted (plus optional Tailscale headers).
 - `gateway.auth.allowTailscale` allows Tailscale Serve identity headers
@@ -3029,12 +3031,43 @@ Auth and Tailscale:
 - `gateway.tailscale.mode: "funnel"` exposes the dashboard publicly; requires auth.
 - `gateway.tailscale.resetOnExit` resets Serve/Funnel config on shutdown.
 
+Examples:
+
+```json5
+// Basic auth
+{
+  gateway: {
+    auth: {
+      mode: "basic",
+      basic: { user: "admin", password: "replace-me" },
+    },
+  },
+}
+```
+
+```json5
+// OAuth2/OIDC (JWT + JWKS)
+{
+  gateway: {
+    auth: {
+      mode: "oauth2",
+      oauth2: {
+        issuer: "https://issuer.example.com/",
+        audience: "openclaw",
+        requiredScopes: ["gateway.read", "gateway.write"],
+      },
+    },
+  },
+}
+```
+
 Remote client defaults (CLI):
 
 - `gateway.remote.url` sets the default Gateway WebSocket URL for CLI calls when `gateway.mode = "remote"`.
 - `gateway.remote.transport` selects the macOS remote transport (`ssh` default, `direct` for ws/wss). When `direct`, `gateway.remote.url` must be `ws://` or `wss://`. `ws://host` defaults to port `18789`.
 - `gateway.remote.token` supplies the token for remote calls (leave unset for no auth).
 - `gateway.remote.password` supplies the password for remote calls (leave unset for no auth).
+- `gateway.remote.basic.user` + `.password` supplies basic auth credentials for remote calls.
 
 macOS app behavior:
 

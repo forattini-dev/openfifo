@@ -23,6 +23,8 @@ export type CallGatewayOptions = {
   url?: string;
   token?: string;
   password?: string;
+  basicUser?: string;
+  basicPassword?: string;
   tlsFingerprint?: string;
   config?: OpenClawConfig;
   method: string;
@@ -55,6 +57,8 @@ export type GatewayConnectionDetails = {
 export type ExplicitGatewayAuth = {
   token?: string;
   password?: string;
+  basicUser?: string;
+  basicPassword?: string;
 };
 
 export function resolveExplicitGatewayAuth(opts?: ExplicitGatewayAuth): ExplicitGatewayAuth {
@@ -64,7 +68,15 @@ export function resolveExplicitGatewayAuth(opts?: ExplicitGatewayAuth): Explicit
     typeof opts?.password === "string" && opts.password.trim().length > 0
       ? opts.password.trim()
       : undefined;
-  return { token, password };
+  const basicUser =
+    typeof opts?.basicUser === "string" && opts.basicUser.trim().length > 0
+      ? opts.basicUser.trim()
+      : undefined;
+  const basicPassword =
+    typeof opts?.basicPassword === "string" && opts.basicPassword.trim().length > 0
+      ? opts.basicPassword.trim()
+      : undefined;
+  return { token, password, basicUser, basicPassword };
 }
 
 export function ensureExplicitGatewayAuth(params: {
@@ -76,7 +88,11 @@ export function ensureExplicitGatewayAuth(params: {
   if (!params.urlOverride) {
     return;
   }
-  if (params.auth.token || params.auth.password) {
+  if (
+    params.auth.token ||
+    params.auth.password ||
+    (params.auth.basicUser && params.auth.basicPassword)
+  ) {
     return;
   }
   const message = [
@@ -164,11 +180,17 @@ export async function callGateway<T = Record<string, unknown>>(
   const remote = isRemoteMode ? config.gateway?.remote : undefined;
   const urlOverride =
     typeof opts.url === "string" && opts.url.trim().length > 0 ? opts.url.trim() : undefined;
-  const explicitAuth = resolveExplicitGatewayAuth({ token: opts.token, password: opts.password });
+  const explicitAuth = resolveExplicitGatewayAuth({
+    token: opts.token,
+    password: opts.password,
+    basicUser: opts.basicUser,
+    basicPassword: opts.basicPassword,
+  });
   ensureExplicitGatewayAuth({
     urlOverride,
     auth: explicitAuth,
-    errorHint: "Fix: pass --token or --password (or gatewayToken in tools).",
+    errorHint:
+      "Fix: pass --token/--password or --basic-user/--basic-password (or gatewayToken in tools).",
     configPath: opts.configPath ?? resolveConfigPath(process.env, resolveStateDir(process.env)),
   });
   const remoteUrl =
@@ -186,6 +208,8 @@ export async function callGateway<T = Record<string, unknown>>(
   }
   const authToken = config.gateway?.auth?.token;
   const authPassword = config.gateway?.auth?.password;
+  const authBasicUser = config.gateway?.auth?.basic?.user;
+  const authBasicPassword = config.gateway?.auth?.basic?.password;
   const connectionDetails = buildGatewayConnectionDetails({
     config,
     url: urlOverride,
@@ -231,6 +255,32 @@ export async function callGateway<T = Record<string, unknown>>(
             ? authPassword.trim()
             : undefined)
       : undefined);
+  const basicUser =
+    explicitAuth.basicUser ||
+    (!urlOverride
+      ? isRemoteMode
+        ? typeof remote?.basic?.user === "string" && remote.basic.user.trim().length > 0
+          ? remote.basic.user.trim()
+          : undefined
+        : process.env.OPENCLAW_GATEWAY_BASIC_USER?.trim() ||
+          process.env.CLAWDBOT_GATEWAY_BASIC_USER?.trim() ||
+          (typeof authBasicUser === "string" && authBasicUser.trim().length > 0
+            ? authBasicUser.trim()
+            : undefined)
+      : undefined);
+  const basicPassword =
+    explicitAuth.basicPassword ||
+    (!urlOverride
+      ? isRemoteMode
+        ? typeof remote?.basic?.password === "string" && remote.basic.password.trim().length > 0
+          ? remote.basic.password.trim()
+          : undefined
+        : process.env.OPENCLAW_GATEWAY_BASIC_PASSWORD?.trim() ||
+          process.env.CLAWDBOT_GATEWAY_BASIC_PASSWORD?.trim() ||
+          (typeof authBasicPassword === "string" && authBasicPassword.trim().length > 0
+            ? authBasicPassword.trim()
+            : undefined)
+      : undefined);
 
   const formatCloseError = (code: number, reason: string) => {
     const reasonText = reason?.trim() || "no close reason";
@@ -261,6 +311,8 @@ export async function callGateway<T = Record<string, unknown>>(
       url,
       token,
       password,
+      basicUser,
+      basicPassword,
       tlsFingerprint,
       instanceId: opts.instanceId ?? randomUUID(),
       clientName: opts.clientName ?? GATEWAY_CLIENT_NAMES.CLI,

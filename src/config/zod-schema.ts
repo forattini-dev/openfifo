@@ -391,11 +391,37 @@ export const OpenClawSchema = z
         auth: z
           .object({
             mode: z
-              .union([z.literal("token"), z.literal("password"), z.literal("proxy")])
+              .union([
+                z.literal("token"),
+                z.literal("password"),
+                z.literal("proxy"),
+                z.literal("basic"),
+                z.literal("oauth2"),
+              ])
               .optional(),
             token: z.string().optional(),
             password: z.string().optional(),
             allowTailscale: z.boolean().optional(),
+            basic: z
+              .object({
+                user: z.string().optional(),
+                password: z.string().optional(),
+              })
+              .strict()
+              .optional(),
+            oauth2: z
+              .object({
+                issuer: z.string().optional(),
+                audience: z.union([z.string(), z.array(z.string())]).optional(),
+                jwksUrl: z.string().optional(),
+                requiredScopes: z.array(z.string()).optional(),
+                requiredRoles: z.array(z.string()).optional(),
+                userClaim: z.string().optional(),
+                scopesClaim: z.string().optional(),
+                rolesClaim: z.string().optional(),
+              })
+              .strict()
+              .optional(),
             proxy: z
               .object({
                 userHeader: z.string().optional(),
@@ -423,6 +449,13 @@ export const OpenClawSchema = z
             transport: z.union([z.literal("ssh"), z.literal("direct")]).optional(),
             token: z.string().optional(),
             password: z.string().optional(),
+            basic: z
+              .object({
+                user: z.string().optional(),
+                password: z.string().optional(),
+              })
+              .strict()
+              .optional(),
             tlsFingerprint: z.string().optional(),
             sshTarget: z.string().optional(),
             sshIdentity: z.string().optional(),

@@ -48,6 +48,9 @@ export type GatewayBrowserClientOptions = {
   url: string;
   token?: string;
   password?: string;
+  bearerToken?: string;
+  basicUser?: string;
+  basicPassword?: string;
   clientName?: GatewayClientName;
   clientVersion?: string;
   platform?: string;
@@ -155,11 +158,18 @@ export class GatewayBrowserClient {
       authToken = storedToken ?? this.opts.token;
       canFallbackToShared = Boolean(storedToken && this.opts.token);
     }
+    const basicUser = this.opts.basicUser?.trim();
+    const basicPassword = this.opts.basicPassword?.trim();
+    const basic =
+      basicUser && basicPassword ? { user: basicUser, password: basicPassword } : undefined;
+    const bearer = this.opts.bearerToken?.trim() || undefined;
     const auth =
-      authToken || this.opts.password
+      authToken || this.opts.password || bearer || basic
         ? {
             token: authToken,
             password: this.opts.password,
+            bearer,
+            basic,
           }
         : undefined;
 

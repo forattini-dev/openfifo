@@ -62,6 +62,51 @@ describe("gateway auth", () => {
     expect(res.reason).toBe("password_missing_config");
   });
 
+  it("reports missing and mismatched basic auth reasons", async () => {
+    const missing = await authorizeGatewayConnect({
+      auth: { mode: "basic", basic: { user: "alice", password: "secret" }, allowTailscale: false },
+      connectAuth: null,
+    });
+    expect(missing.ok).toBe(false);
+    expect(missing.reason).toBe("basic_missing");
+
+    const mismatch = await authorizeGatewayConnect({
+      auth: { mode: "basic", basic: { user: "alice", password: "secret" }, allowTailscale: false },
+      connectAuth: { basic: { user: "alice", password: "wrong" } },
+    });
+    expect(mismatch.ok).toBe(false);
+    expect(mismatch.reason).toBe("basic_mismatch");
+  });
+
+  it("reports missing basic auth config reason", async () => {
+    const res = await authorizeGatewayConnect({
+      auth: { mode: "basic", allowTailscale: false },
+      connectAuth: { basic: { user: "alice", password: "secret" } },
+    });
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe("basic_missing_config");
+  });
+
+  it("reports missing oauth2 config and missing token reasons", async () => {
+    const missingConfig = await authorizeGatewayConnect({
+      auth: { mode: "oauth2", allowTailscale: false },
+      connectAuth: { token: "secret" },
+    });
+    expect(missingConfig.ok).toBe(false);
+    expect(missingConfig.reason).toBe("oauth2_missing_config");
+
+    const missingToken = await authorizeGatewayConnect({
+      auth: {
+        mode: "oauth2",
+        oauth2: { jwksUrl: "https://example.com/jwks" },
+        allowTailscale: false,
+      },
+      connectAuth: null,
+    });
+    expect(missingToken.ok).toBe(false);
+    expect(missingToken.reason).toBe("oauth2_missing");
+  });
+
   it("treats local tailscale serve hostnames as direct", async () => {
     const res = await authorizeGatewayConnect({
       auth: { mode: "token", token: "secret", allowTailscale: true },

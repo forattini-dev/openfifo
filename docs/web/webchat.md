@@ -44,6 +44,6 @@ Channel options:
 Related global options:
 
 - `gateway.port`, `gateway.bind`: WebSocket host/port.
-- `gateway.auth.mode`, `gateway.auth.token`, `gateway.auth.password`, `gateway.auth.proxy.*`: WebSocket auth.
+- `gateway.auth.mode`, `gateway.auth.token`, `gateway.auth.password`, `gateway.auth.basic.*`, `gateway.auth.oauth2.*`, `gateway.auth.proxy.*`: WebSocket auth.
 - `gateway.remote.url`, `gateway.remote.token`, `gateway.remote.password`: remote gateway target.
 - `session.*`: session storage and main key defaults.

@@ -1352,7 +1352,7 @@ If the file is missing, it uses safe-ish defaults (including a default workspace
 
 ### I set gatewaybind lan or tailnet and now nothing listens the UI says unauthorized
 
-Non-loopback binds **require auth**. Configure `gateway.auth.mode` + `gateway.auth.password` (or use `OPENCLAW_GATEWAY_PASSWORD`), or use proxy auth.
+Non-loopback binds **require auth**. Configure `gateway.auth.mode` + `gateway.auth.password` (or `basic`/`oauth2`), or use proxy auth.
 
 ```json5
 {

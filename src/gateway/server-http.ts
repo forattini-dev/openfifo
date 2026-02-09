@@ -19,7 +19,12 @@ import {
 } from "../canvas-host/a2ui.js";
 import { loadConfig } from "../config/config.js";
 import { handleSlackHttpRequest } from "../slack/http/index.js";
-import { authorizeGatewayConnect, isLocalDirectRequest, type ResolvedGatewayAuth } from "./auth.js";
+import {
+  authorizeGatewayConnect,
+  isLocalDirectRequest,
+  resolveGatewayConnectAuthFromRequest,
+  type ResolvedGatewayAuth,
+} from "./auth.js";
 import {
   handleControlUiAvatarRequest,
   handleControlUiHttpRequest,
@@ -39,7 +44,7 @@ import {
   resolveHookDeliver,
 } from "./hooks.js";
 import { sendUnauthorized } from "./http-common.js";
-import { getBearerToken, getHeader } from "./http-utils.js";
+import { getHeader } from "./http-utils.js";
 import { resolveGatewayClientIp } from "./net.js";
 import { handleOpenAiHttpRequest } from "./openai-http.js";
 import { handleOpenResponsesHttpRequest } from "./openresponses-http.js";
@@ -100,11 +105,11 @@ async function authorizeCanvasRequest(params: {
     return true;
   }
 
-  const token = getBearerToken(req);
-  if (token) {
+  const connectAuth = resolveGatewayConnectAuthFromRequest(req);
+  if (connectAuth) {
     const authResult = await authorizeGatewayConnect({
       auth: { ...auth, allowTailscale: false },
-      connectAuth: { token, password: token },
+      connectAuth,
       req,
       trustedProxies,
     });

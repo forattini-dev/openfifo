@@ -57,6 +57,16 @@ export const ConnectParamsSchema = Type.Object(
         {
           token: Type.Optional(Type.String()),
           password: Type.Optional(Type.String()),
+          bearer: Type.Optional(Type.String()),
+          basic: Type.Optional(
+            Type.Object(
+              {
+                user: NonEmptyString,
+                password: NonEmptyString,
+              },
+              { additionalProperties: false },
+            ),
+          ),
         },
         { additionalProperties: false },
       ),

@@ -20,14 +20,17 @@ Under the hood, requests are executed as a normal Gateway agent run (same codepa
 
 ## Authentication
 
-Uses the Gateway auth configuration. Send a bearer token:
+Uses the Gateway auth configuration. Send one of:
 
-- `Authorization: Bearer <token>`
+- `Authorization: Bearer <token>` (token/password/oauth2 modes)
+- `Authorization: Basic <base64(user:password)>` (basic mode)
 
 Notes:
 
 - When `gateway.auth.mode="token"`, use `gateway.auth.token` (or `OPENCLAW_GATEWAY_TOKEN`).
 - When `gateway.auth.mode="password"`, use `gateway.auth.password` (or `OPENCLAW_GATEWAY_PASSWORD`).
+- When `gateway.auth.mode="basic"`, use `gateway.auth.basic.user` + `.password`.
+- When `gateway.auth.mode="oauth2"`, use a valid OAuth2/OIDC bearer token.
 
 ## Choosing an agent
 

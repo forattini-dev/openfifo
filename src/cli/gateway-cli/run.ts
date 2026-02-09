@@ -139,11 +139,15 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
   }
   const authModeRaw = toOptionString(opts.auth);
   const authMode: GatewayAuthMode | null =
-    authModeRaw === "token" || authModeRaw === "password" || authModeRaw === "proxy"
+    authModeRaw === "token" ||
+    authModeRaw === "password" ||
+    authModeRaw === "proxy" ||
+    authModeRaw === "basic" ||
+    authModeRaw === "oauth2"
       ? authModeRaw
       : null;
   if (authModeRaw && !authMode) {
-    defaultRuntime.error('Invalid --auth (use "token", "password", or "proxy")');
+    defaultRuntime.error('Invalid --auth (use "token", "password", "basic", "oauth2", or "proxy")');
     defaultRuntime.exit(1);
     return;
   }
@@ -206,11 +210,21 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
   const resolvedAuthMode = resolvedAuth.mode;
   const tokenValue = resolvedAuth.token;
   const passwordValue = resolvedAuth.password;
+  const basicUserValue = resolvedAuth.basic?.user;
+  const basicPasswordValue = resolvedAuth.basic?.password;
+  const hasOauth2Config = Boolean(resolvedAuth.oauth2?.issuer || resolvedAuth.oauth2?.jwksUrl);
   const hasToken = typeof tokenValue === "string" && tokenValue.trim().length > 0;
   const hasPassword = typeof passwordValue === "string" && passwordValue.trim().length > 0;
+  const hasBasic =
+    typeof basicUserValue === "string" &&
+    basicUserValue.trim().length > 0 &&
+    typeof basicPasswordValue === "string" &&
+    basicPasswordValue.trim().length > 0;
   const hasSharedSecret =
     (resolvedAuthMode === "token" && hasToken) ||
     (resolvedAuthMode === "password" && hasPassword) ||
+    (resolvedAuthMode === "basic" && hasBasic) ||
+    (resolvedAuthMode === "oauth2" && hasOauth2Config) ||
     resolvedAuthMode === "proxy";
   const authHints: string[] = [];
   if (miskeys.hasGatewayToken) {
@@ -247,11 +261,37 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
     defaultRuntime.exit(1);
     return;
   }
+  if (resolvedAuthMode === "basic" && !hasBasic) {
+    defaultRuntime.error(
+      [
+        "Gateway auth is set to basic, but no username/password is configured.",
+        "Set gateway.auth.basic.user + gateway.auth.basic.password (or OPENCLAW_GATEWAY_BASIC_USER/OPENCLAW_GATEWAY_BASIC_PASSWORD).",
+        ...authHints,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    defaultRuntime.exit(1);
+    return;
+  }
+  if (resolvedAuthMode === "oauth2" && !hasOauth2Config) {
+    defaultRuntime.error(
+      [
+        "Gateway auth is set to oauth2, but no issuer/JWKS is configured.",
+        "Set gateway.auth.oauth2.issuer or gateway.auth.oauth2.jwksUrl (or OPENCLAW_GATEWAY_OAUTH2_ISSUER/OPENCLAW_GATEWAY_OAUTH2_JWKS_URL).",
+        ...authHints,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    defaultRuntime.exit(1);
+    return;
+  }
   if (bind !== "loopback" && !hasSharedSecret) {
     defaultRuntime.error(
       [
         `Refusing to bind gateway to ${bind} without auth.`,
-        "Set gateway.auth.password/token (or OPENCLAW_GATEWAY_PASSWORD/OPENCLAW_GATEWAY_TOKEN), configure proxy auth, or pass --password/--token.",
+        "Set gateway.auth.password/token/basic/oauth2 (or env vars), configure proxy auth, or pass --password/--token.",
         ...authHints,
       ]
         .filter(Boolean)
@@ -323,7 +363,7 @@ export function addGatewayRunCommand(cmd: Command): Command {
       "--token <token>",
       "Shared token required in connect.params.auth.token (default: OPENCLAW_GATEWAY_TOKEN env if set)",
     )
-    .option("--auth <mode>", 'Gateway auth mode ("token"|"password"|"proxy")')
+    .option("--auth <mode>", 'Gateway auth mode ("token"|"password"|"basic"|"oauth2"|"proxy")')
     .option("--password <password>", "Password for auth mode=password")
     .option("--tailscale <mode>", 'Tailscale exposure mode ("off"|"serve"|"funnel")')
     .option(

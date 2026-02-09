@@ -5,7 +5,11 @@ import { createDefaultDeps } from "../cli/deps.js";
 import { agentCommand } from "../commands/agent.js";
 import { emitAgentEvent, onAgentEvent } from "../infra/agent-events.js";
 import { defaultRuntime } from "../runtime.js";
-import { authorizeGatewayConnect, type ResolvedGatewayAuth } from "./auth.js";
+import {
+  authorizeGatewayConnect,
+  resolveGatewayConnectAuthFromRequest,
+  type ResolvedGatewayAuth,
+} from "./auth.js";
 import {
   readJsonBodyOrError,
   sendJson,
@@ -14,7 +18,7 @@ import {
   setSseHeaders,
   writeDone,
 } from "./http-common.js";
-import { getBearerToken, resolveAgentIdForRequest, resolveSessionKey } from "./http-utils.js";
+import { resolveAgentIdForRequest, resolveSessionKey } from "./http-utils.js";
 
 type OpenAiHttpOptions = {
   auth: ResolvedGatewayAuth;
@@ -183,10 +187,10 @@ export async function handleOpenAiHttpRequest(
     return true;
   }
 
-  const token = getBearerToken(req);
+  const connectAuth = resolveGatewayConnectAuthFromRequest(req);
   const authResult = await authorizeGatewayConnect({
     auth: opts.auth,
-    connectAuth: { token, password: token },
+    connectAuth,
     req,
     trustedProxies: opts.trustedProxies,
   });

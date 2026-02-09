@@ -44,7 +44,7 @@ Notes:
 
 - `--port <port>`: WebSocket port (default comes from config/env; usually `18789`).
 - `--bind <loopback|lan|tailnet|auto|custom>`: listener bind mode.
-- `--auth <token|password>`: auth mode override.
+- `--auth <token|password|basic|oauth2|proxy>`: auth mode override.
 - `--token <token>`: token override (also sets `OPENCLAW_GATEWAY_TOKEN` for the process).
 - `--password <password>`: password override (also sets `OPENCLAW_GATEWAY_PASSWORD` for the process).
 - `--tailscale <off|serve|funnel>`: expose the Gateway via Tailscale.
@@ -75,6 +75,8 @@ Shared options (where supported):
 - `--url <url>`: Gateway WebSocket URL.
 - `--token <token>`: Gateway token.
 - `--password <password>`: Gateway password.
+- `--basic-user <user>`: Gateway basic auth user.
+- `--basic-password <password>`: Gateway basic auth password.
 - `--timeout <ms>`: timeout/budget (varies per command).
 - `--expect-final`: wait for a “final” response (agent calls).
 
