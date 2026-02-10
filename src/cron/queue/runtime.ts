@@ -34,6 +34,17 @@ export type CronQueueRuntime = {
   stop: () => Promise<void>;
 };
 
+type CronQueueResource = {
+  enqueue?: (
+    data: Record<string, unknown>,
+    options?: { maxAttempts?: number },
+  ) => Promise<Record<string, unknown>>;
+  state?: {
+    initialize?: (id: string, context?: Record<string, unknown>) => Promise<unknown>;
+    send?: (id: string, event: string, context?: Record<string, unknown>) => Promise<unknown>;
+  };
+};
+
 type QueueRecord = Record<string, unknown> & {
   id: string;
   jobId?: string;
@@ -93,16 +104,10 @@ async function ensureCronQueueResource(params: {
   db: Awaited<ReturnType<typeof getS3db>>;
   name: string;
   stateField: string;
-}) {
+}): Promise<CronQueueResource> {
   const { db, name, stateField } = params;
   if (db.resourceExists(name)) {
-    return db.resources[name] as unknown as {
-      enqueue?: (
-        data: Record<string, unknown>,
-        options?: { maxAttempts?: number },
-      ) => Promise<Record<string, unknown>>;
-      state?: { initialize?: (id: string, context?: Record<string, unknown>) => Promise<unknown> };
-    };
+    return db.resources[name] as unknown as CronQueueResource;
   }
 
   const attributes: Record<string, string> = {
@@ -125,13 +130,7 @@ async function ensureCronQueueResource(params: {
     },
   });
 
-  return resource as unknown as {
-    enqueue?: (
-      data: Record<string, unknown>,
-      options?: { maxAttempts?: number },
-    ) => Promise<Record<string, unknown>>;
-    state?: { initialize?: (id: string, context?: Record<string, unknown>) => Promise<unknown> };
-  };
+  return resource as unknown as CronQueueResource;
 }
 
 function buildStateMachineConfig(params: { resource: string; stateField: string }) {
@@ -178,13 +177,7 @@ function buildStateMachineConfig(params: { resource: string; stateField: string 
 async function enqueueDueJobs(params: {
   cfg: OpenClawConfig;
   cronState: ReturnType<typeof createCronServiceState>;
-  queueResource: {
-    enqueue?: (
-      data: Record<string, unknown>,
-      options?: { maxAttempts?: number },
-    ) => Promise<Record<string, unknown>>;
-    state?: { initialize?: (id: string, context?: Record<string, unknown>) => Promise<unknown> };
-  };
+  queueResource: CronQueueResource;
   stateMachineEnabled: boolean;
   stateField: string;
   schedulerBatchLimit: number;
@@ -401,7 +394,7 @@ export async function startCronQueueRuntime(params: {
             ? task.maxAttempts
             : maxAttempts;
 
-        const state = (queueResource as any).state;
+        const state = queueResource.state;
         const sendState = async (event: string, extra?: Record<string, unknown>) => {
           if (!stateMachineEnabled || !state?.send) {
             return;
