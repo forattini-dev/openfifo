@@ -19,6 +19,8 @@ import {
   writeConfigFile,
 } from "../config/config.js";
 import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
+import { resolveCronMode, resolveCronQueueRoles } from "../cron/queue/config.js";
+import { startCronQueueRuntime } from "../cron/queue/runtime.js";
 import { clearAgentRunContext, onAgentEvent } from "../infra/agent-events.js";
 import {
   ensureControlUiAssetsBuilt,
@@ -372,12 +374,19 @@ export async function startGatewayServer(
   const hasMobileNodeConnected = () => hasConnectedMobileNode(nodeRegistry);
   applyGatewayLaneConcurrency(cfgAtStart);
 
+  const cronMode = resolveCronMode(cfgAtStart, process.env);
+  const cronQueueRoles = resolveCronQueueRoles(cfgAtStart, process.env, cronMode);
+
   let cronState = buildGatewayCronService({
     cfg: cfgAtStart,
     deps,
     broadcast,
   });
   let { cron, storePath: cronStorePath } = cronState;
+  const cronQueueRuntime =
+    cronMode === "queue" && cronQueueRoles.includes("gateway")
+      ? await startCronQueueRuntime({ cfg: cfgAtStart, roles: cronQueueRoles })
+      : null;
 
   const channelManager = createChannelManager({
     loadConfig,
@@ -459,7 +468,17 @@ export async function startGatewayServer(
 
   let heartbeatRunner = startHeartbeatRunner({ cfg: cfgAtStart });
 
-  void cron.start().catch((err) => logCron.error(`failed to start: ${String(err)}`));
+  if (cronMode !== "queue") {
+    void cron.start().catch((err) => logCron.error(`failed to start: ${String(err)}`));
+  } else {
+    logCron.info({ mode: cronMode }, "cron: queue mode enabled (local scheduler disabled)");
+    if (!cronQueueRuntime) {
+      logCron.warn(
+        { roles: cronQueueRoles },
+        "cron: queue mode active but no scheduler/worker roles enabled in this process",
+      );
+    }
+  }
 
   const execApprovalManager = new ExecApprovalManager();
   const execApprovalForwarder = createExecApprovalForwarder();
@@ -605,6 +624,7 @@ export async function startGatewayServer(
     stopChannel,
     pluginServices,
     cron,
+    cronQueue: cronQueueRuntime,
     heartbeatRunner,
     nodePresenceTimers,
     broadcast,

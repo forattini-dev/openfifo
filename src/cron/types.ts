@@ -55,6 +55,8 @@ export type CronPayloadPatch =
 export type CronJobState = {
   nextRunAtMs?: number;
   runningAtMs?: number;
+  /** Tracks when a queue-backed scheduler last enqueued this job. */
+  enqueuedAtMs?: number;
   lastRunAtMs?: number;
   lastStatus?: "ok" | "error" | "skipped";
   lastError?: string;

@@ -292,6 +292,64 @@ export const OpenClawSchema = z
         enabled: z.boolean().optional(),
         store: z.string().optional(),
         maxConcurrentRuns: z.number().int().positive().optional(),
+        mode: z.enum(["local", "queue"]).optional(),
+        queue: z
+          .object({
+            roles: z.array(z.enum(["gateway", "scheduler", "worker"])).optional(),
+            resource: z.string().optional(),
+            deadLetterResource: z.string().optional(),
+            maxAttempts: z.number().int().positive().optional(),
+            visibilityTimeoutMs: z.number().int().positive().optional(),
+            pollIntervalMs: z.number().int().positive().optional(),
+            concurrency: z.number().int().positive().optional(),
+            orderingMode: z.enum(["fifo", "lifo"]).optional(),
+            enableCoordinator: z.boolean().optional(),
+            scheduler: z
+              .object({
+                enabled: z.boolean().optional(),
+                schedule: z.string().optional(),
+                timezone: z.string().optional(),
+                batchLimit: z.number().int().positive().optional(),
+                staleEnqueueMs: z.number().int().positive().optional(),
+              })
+              .strict()
+              .optional(),
+            worker: z
+              .object({
+                enabled: z.boolean().optional(),
+                concurrency: z.number().int().positive().optional(),
+              })
+              .strict()
+              .optional(),
+            gateway: z
+              .object({
+                url: z.string().optional(),
+                token: z.string().optional(),
+                password: z.string().optional(),
+                basic: z
+                  .object({
+                    user: z.string().optional(),
+                    password: z.string().optional(),
+                  })
+                  .strict()
+                  .optional(),
+                tlsFingerprint: z.string().optional(),
+                timeoutMs: z.number().int().positive().optional(),
+              })
+              .strict()
+              .optional(),
+            stateMachine: z
+              .object({
+                enabled: z.boolean().optional(),
+                stateField: z.string().optional(),
+                transitionLogResource: z.string().optional(),
+                stateResource: z.string().optional(),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),

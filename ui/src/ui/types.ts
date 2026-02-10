@@ -668,6 +668,7 @@ export type CronDelivery = {
 export type CronJobState = {
   nextRunAtMs?: number;
   runningAtMs?: number;
+  enqueuedAtMs?: number;
   lastRunAtMs?: number;
   lastStatus?: "ok" | "error" | "skipped";
   lastError?: string;

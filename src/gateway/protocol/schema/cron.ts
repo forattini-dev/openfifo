@@ -101,6 +101,7 @@ export const CronJobStateSchema = Type.Object(
   {
     nextRunAtMs: Type.Optional(Type.Integer({ minimum: 0 })),
     runningAtMs: Type.Optional(Type.Integer({ minimum: 0 })),
+    enqueuedAtMs: Type.Optional(Type.Integer({ minimum: 0 })),
     lastRunAtMs: Type.Optional(Type.Integer({ minimum: 0 })),
     lastStatus: Type.Optional(
       Type.Union([Type.Literal("ok"), Type.Literal("error"), Type.Literal("skipped")]),

@@ -142,6 +142,10 @@ export async function update(state: CronServiceState, id: string, patch: CronJob
     const scheduleChanged = patch.schedule !== undefined;
     const enabledChanged = patch.enabled !== undefined;
 
+    if (scheduleChanged || enabledChanged) {
+      job.state.enqueuedAtMs = undefined;
+    }
+
     job.updatedAtMs = now;
     if (scheduleChanged || enabledChanged) {
       if (job.enabled) {
@@ -187,12 +191,22 @@ export async function run(state: CronServiceState, id: string, mode?: "due" | "f
     warnIfDisabled(state, "run");
     await ensureLoaded(state, { skipRecompute: true });
     const job = findJobOrThrow(state, id);
+    const hadEnqueued = typeof job.state.enqueuedAtMs === "number";
+    if (hadEnqueued) {
+      job.state.enqueuedAtMs = undefined;
+    }
     if (typeof job.state.runningAtMs === "number") {
+      if (hadEnqueued) {
+        await persist(state);
+      }
       return { ok: true, ran: false, reason: "already-running" as const };
     }
     const now = state.deps.nowMs();
     const due = isJobDue(job, now, { forced: mode === "force" });
     if (!due) {
+      if (hadEnqueued) {
+        await persist(state);
+      }
       return { ok: true, ran: false, reason: "not-due" as const };
     }
     await executeJob(state, job, now, { forced: mode === "force" });

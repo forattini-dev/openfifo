@@ -413,6 +413,34 @@ const FIELD_LABELS: Record<string, string> = {
   "plugins.installs.*.installPath": "Plugin Install Path",
   "plugins.installs.*.version": "Plugin Install Version",
   "plugins.installs.*.installedAt": "Plugin Install Time",
+  "cron.mode": "Cron Mode",
+  "cron.queue.roles": "Cron Queue Roles",
+  "cron.queue.resource": "Cron Queue Resource",
+  "cron.queue.deadLetterResource": "Cron Queue Dead Letter Resource",
+  "cron.queue.maxAttempts": "Cron Queue Max Attempts",
+  "cron.queue.visibilityTimeoutMs": "Cron Queue Visibility Timeout (ms)",
+  "cron.queue.pollIntervalMs": "Cron Queue Poll Interval (ms)",
+  "cron.queue.concurrency": "Cron Queue Concurrency",
+  "cron.queue.orderingMode": "Cron Queue Ordering Mode",
+  "cron.queue.enableCoordinator": "Cron Queue Coordinator",
+  "cron.queue.scheduler.enabled": "Cron Scheduler Enabled",
+  "cron.queue.scheduler.schedule": "Cron Scheduler Schedule",
+  "cron.queue.scheduler.timezone": "Cron Scheduler Timezone",
+  "cron.queue.scheduler.batchLimit": "Cron Scheduler Batch Limit",
+  "cron.queue.scheduler.staleEnqueueMs": "Cron Scheduler Stale Enqueue (ms)",
+  "cron.queue.worker.enabled": "Cron Worker Enabled",
+  "cron.queue.worker.concurrency": "Cron Worker Concurrency",
+  "cron.queue.gateway.url": "Cron Gateway URL",
+  "cron.queue.gateway.token": "Cron Gateway Token",
+  "cron.queue.gateway.password": "Cron Gateway Password",
+  "cron.queue.gateway.basic.user": "Cron Gateway Basic User",
+  "cron.queue.gateway.basic.password": "Cron Gateway Basic Password",
+  "cron.queue.gateway.tlsFingerprint": "Cron Gateway TLS Fingerprint",
+  "cron.queue.gateway.timeoutMs": "Cron Gateway Timeout (ms)",
+  "cron.queue.stateMachine.enabled": "Cron State Machine Enabled",
+  "cron.queue.stateMachine.stateField": "Cron State Field",
+  "cron.queue.stateMachine.transitionLogResource": "Cron State Transition Log Resource",
+  "cron.queue.stateMachine.stateResource": "Cron State Resource",
 };
 
 const FIELD_HELP: Record<string, string> = {
@@ -807,6 +835,43 @@ const FIELD_HELP: Record<string, string> = {
     "Optional PluralKit token for resolving private systems or members.",
   "channels.slack.dm.policy":
     'Direct message access control ("pairing" recommended). "open" requires channels.slack.dm.allowFrom=["*"].',
+  "cron.mode":
+    'Cron execution mode ("local" runs in-process; "queue" uses s3db scheduler + queue).',
+  "cron.queue.roles":
+    "Queue runtime roles to start in this process (gateway, scheduler, worker). Use env OPENCLAW_CRON_ROLES to override per-container.",
+  "cron.queue.resource": "s3db resource name for cron queue tasks.",
+  "cron.queue.deadLetterResource": "Optional dead-letter resource for failed cron tasks.",
+  "cron.queue.maxAttempts": "Max retry attempts for cron queue tasks (default: 3).",
+  "cron.queue.visibilityTimeoutMs":
+    "Visibility timeout in ms for cron queue tasks (default: 30000).",
+  "cron.queue.pollIntervalMs": "Queue poll interval in ms (default: 1000).",
+  "cron.queue.concurrency":
+    "Default worker concurrency when queue workers are enabled (fallback to cron.maxConcurrentRuns).",
+  "cron.queue.orderingMode": 'Queue ordering mode ("fifo" or "lifo").',
+  "cron.queue.enableCoordinator": "Enable queue coordinator for dispatch tickets (default: true).",
+  "cron.queue.scheduler.enabled": "Enable the queue-backed cron scheduler in this process.",
+  "cron.queue.scheduler.schedule":
+    "Scheduler tick cron expression (5-field) for enqueueing due cron jobs (default: * * * * *).",
+  "cron.queue.scheduler.timezone": "Scheduler timezone (if supported by the scheduler plugin).",
+  "cron.queue.scheduler.batchLimit": "Max cron jobs to enqueue per scheduler tick.",
+  "cron.queue.scheduler.staleEnqueueMs":
+    "Treat enqueue markers as stale after this many ms (allows re-queue if a scheduler crashed).",
+  "cron.queue.worker.enabled": "Enable the queue-backed cron worker in this process.",
+  "cron.queue.worker.concurrency":
+    "Cron worker concurrency override (default: cron.queue.concurrency).",
+  "cron.queue.gateway.url": "Gateway WebSocket URL for cron workers (optional override).",
+  "cron.queue.gateway.token": "Gateway token for cron workers.",
+  "cron.queue.gateway.password": "Gateway password for cron workers.",
+  "cron.queue.gateway.basic.user": "Gateway basic auth user for cron workers.",
+  "cron.queue.gateway.basic.password": "Gateway basic auth password for cron workers.",
+  "cron.queue.gateway.tlsFingerprint": "Expected gateway TLS fingerprint for cron workers.",
+  "cron.queue.gateway.timeoutMs": "Gateway RPC timeout for cron workers (ms).",
+  "cron.queue.stateMachine.enabled": "Enable the s3db state machine for cron queue tasks.",
+  "cron.queue.stateMachine.stateField":
+    "Field on the queue resource to mirror state machine transitions (default: status).",
+  "cron.queue.stateMachine.transitionLogResource":
+    "Resource name for state machine transition history.",
+  "cron.queue.stateMachine.stateResource": "Resource name for state machine entity state.",
 };
 
 const FIELD_PLACEHOLDERS: Record<string, string> = {
@@ -818,6 +883,10 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   "gateway.controlUi.allowedOrigins": "https://control.example.com",
   "channels.mattermost.baseUrl": "https://chat.example.com",
   "agents.list[].identity.avatar": "avatars/openclaw.png",
+  "cron.queue.resource": "cron_tasks",
+  "cron.queue.scheduler.schedule": "* * * * *",
+  "cron.queue.roles": "gateway,scheduler,worker",
+  "cron.queue.gateway.url": "ws://gateway:18789",
 };
 
 const SENSITIVE_PATTERNS = [/token/i, /password/i, /secret/i, /api.?key/i];

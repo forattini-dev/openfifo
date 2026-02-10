@@ -8,6 +8,8 @@ import {
   readConfigFileSnapshot,
   resolveGatewayPort,
 } from "../../config/config.js";
+import { resolveCronMode, resolveCronQueueRoles } from "../../cron/queue/config.js";
+import { runCronQueueProcess } from "../../cron/queue/process.js";
 import { resolveGatewayAuth } from "../../gateway/auth.js";
 import { startGatewayServer } from "../../gateway/server.js";
 import { setGatewayWsLogStyle } from "../../gateway/ws-logging.js";
@@ -93,6 +95,14 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
   }
 
   const cfg = loadConfig();
+  const cronMode = resolveCronMode(cfg, process.env);
+  if (cronMode === "queue") {
+    const queueRoles = resolveCronQueueRoles(cfg, process.env, cronMode);
+    if (!queueRoles.includes("gateway")) {
+      await runCronQueueProcess({ cfg, roles: queueRoles });
+      return;
+    }
+  }
   const portOverride = parsePort(opts.port);
   if (opts.port !== undefined && portOverride === null) {
     defaultRuntime.error("Invalid port");
