@@ -56,7 +56,11 @@ You can still override these in config, but the baseline is optimized for cost a
 
 ## Container-first ops
 
-OpenFIFO’s docs include a container-first proxy layout (Claude + OpenAI/Codex) and recommended environment wiring. See `docs/deploy/proxies.md`.
+OpenFIFO’s docs include container-first layouts and sample configs:
+
+- Proxies (Claude + OpenAI/Codex) with `openclaw.json` volume mounts: `docs/deploy/proxies.md`.
+- Queue-backed cron (gateway/scheduler/worker split), including a full `docker-compose` example:
+  `docs/deploy/cron-queue.md` and `docs/deploy/cron-queue.docker-compose.yaml`.
 
 ## Fork history (OpenFIFO changes)
 
@@ -97,3 +101,8 @@ OpenFIFO’s docs include a container-first proxy layout (Claude + OpenAI/Codex)
 ### 2026-02-09 — `05c1b4567` — cron: tighten queue resource typing
 
 - Follow-up typing cleanup for the cron queue runtime (no behavior change).
+
+### 2026-02-09 — `ab30ade22` — docs: add cron queue compose example
+
+- Added a full `docker-compose.yaml` example for queue-backed cron in `docs/deploy/cron-queue.docker-compose.yaml`.
+- Expanded `docs/deploy/cron-queue.md` with an `openclaw.json` example for gateway/scheduler/worker roles.
