@@ -12,15 +12,16 @@ OpenFIFO is our OpenClaw variant tuned for container-first deployments, s3db-onl
 
 ## Differences at a glance
 
-| Area                 | OpenClaw              | OpenFIFO                                         |
-| -------------------- | --------------------- | ------------------------------------------------ |
-| Persistence          | Multiple options      | **s3db only**                                    |
-| Default model        | Opus-leaning examples | **Haiku** (`claude-haiku-4-5`)                   |
-| Context default      | Varies                | **200k tokens**                                  |
-| Concurrency defaults | Varies                | **3 agents / 6 sub-agents**                      |
-| Web fetch            | Standard fetch        | **recker** (impersonated fetch)                  |
-| Control UI auth      | Token or password     | **Password or proxy** (no token/basic/oauth2 UI) |
-| Skill install safety | Install directly      | **Static scan + confirm**                        |
+| Area                 | OpenClaw              | OpenFIFO                                            |
+| -------------------- | --------------------- | --------------------------------------------------- |
+| Persistence          | Multiple options      | **s3db only**                                       |
+| Default model        | Opus-leaning examples | **Haiku** (`claude-haiku-4-5`)                      |
+| Context default      | Varies                | **200k tokens**                                     |
+| Concurrency defaults | Varies                | **3 agents / 6 sub-agents**                         |
+| Web fetch            | Standard fetch        | **recker** (impersonated fetch)                     |
+| Cron runtime         | In-process            | **Optional s3db queue + scheduler + state machine** |
+| Control UI auth      | Token or password     | **Password or proxy** (no token/basic/oauth2 UI)    |
+| Skill install safety | Install directly      | **Static scan + confirm**                           |
 
 ## Persistence (s3db only)
 
@@ -77,3 +78,22 @@ OpenFIFO’s docs include a container-first proxy layout (Claude + OpenAI/Codex)
 - CLI now supports `--auth basic|oauth2` and `--basic-user/--basic-password` for remote RPC.
 - Config schema extended with `gateway.auth.basic.*`, `gateway.auth.oauth2.*`, and `gateway.remote.basic.*`.
 - Documentation updated across gateway/web/CLI pages to describe the new auth modes and config/env vars.
+
+### 2026-02-09 — `de34526f3` — docs: list fork changes in openfifo overview
+
+- Added the initial OpenFIFO fork history section to `docs/concepts/openfifo.md`.
+
+### 2026-02-09 — `25ae61cd1` — docs: expand proxy deployment guide
+
+- Expanded `docs/deploy/proxies.md` with container-first proxy wiring, `openclaw.json` volume mounts, and minimal-access Docker Compose patterns.
+
+### 2026-02-09 — `46c28a334` — cron: add s3db queue mode
+
+- Added **queue-backed cron mode** using s3db SchedulerPlugin + S3QueuePlugin + StateMachinePlugin.
+- Cron jobs can now be split into **gateway / scheduler / worker** roles via config or env (`OPENCLAW_CRON_ROLES`).
+- Queue mode persists tasks in s3db and survives container restarts; workers call `cron.run` against the gateway.
+- New deploy docs: `docs/deploy/cron-queue.md`.
+
+### 2026-02-09 — `05c1b4567` — cron: tighten queue resource typing
+
+- Follow-up typing cleanup for the cron queue runtime (no behavior change).
