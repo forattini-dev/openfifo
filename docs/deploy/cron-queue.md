@@ -74,6 +74,44 @@ Notes:
 - `scheduler.schedule` is a 5-field cron expression (minute resolution).
 - If you use multiple containers, use `OPENCLAW_CRON_ROLES` to avoid running all roles everywhere.
 
+## openclaw.json Example (Gateway + Scheduler + Worker)
+
+This keeps shared queue config in `openclaw.json`, while each container selects its role via
+`OPENCLAW_CRON_ROLES`.
+
+```jsonc
+{
+  "cron": {
+    "mode": "queue",
+    "queue": {
+      "resource": "cron_tasks",
+      "deadLetterResource": "cron_tasks_dead",
+      "maxAttempts": 3,
+      "visibilityTimeoutMs": 30000,
+      "pollIntervalMs": 1000,
+      "concurrency": 1,
+      "orderingMode": "fifo",
+      "enableCoordinator": true,
+      "scheduler": {
+        "schedule": "* * * * *",
+        "batchLimit": 25,
+      },
+      "worker": {
+        "concurrency": 1,
+      },
+      "stateMachine": {
+        "enabled": true,
+        "stateField": "status",
+      },
+      "gateway": {
+        "url": "ws://openclaw-gateway:18789",
+        "token": "${OPENCLAW_GATEWAY_TOKEN}",
+      },
+    },
+  },
+}
+```
+
 ## Docker Compose Pattern
 
 ```yaml
@@ -112,6 +150,59 @@ services:
       OPENCLAW_CRON_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
     volumes:
       - ./openclaw.json:/home/node/.openclaw/openclaw.json:ro
+```
+
+## docker-compose.yaml (Full Example)
+
+This version includes an internal network and avoids exposing scheduler/worker containers.
+You can also copy the same file from `docs/deploy/cron-queue.docker-compose.yaml`.
+
+```yaml
+services:
+  openclaw-gateway:
+    image: ghcr.io/openclaw/openclaw:latest
+    command: ["node", "openclaw.mjs", "gateway", "--allow-unconfigured"]
+    environment:
+      OPENCLAW_CRON_MODE: queue
+      OPENCLAW_CRON_ROLES: gateway
+      OPENCLAW_S3DB_URL: ${OPENCLAW_S3DB_URL}
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+    volumes:
+      - ./openclaw.json:/home/node/.openclaw/openclaw.json:ro
+    networks:
+      - internal
+    ports:
+      - "18789:18789"
+
+  openclaw-cron-scheduler:
+    image: ghcr.io/openclaw/openclaw:latest
+    command: ["node", "openclaw.mjs", "gateway", "--allow-unconfigured"]
+    environment:
+      OPENCLAW_CRON_MODE: queue
+      OPENCLAW_CRON_ROLES: scheduler
+      OPENCLAW_S3DB_URL: ${OPENCLAW_S3DB_URL}
+    volumes:
+      - ./openclaw.json:/home/node/.openclaw/openclaw.json:ro
+    networks:
+      - internal
+
+  openclaw-cron-worker:
+    image: ghcr.io/openclaw/openclaw:latest
+    command: ["node", "openclaw.mjs", "gateway", "--allow-unconfigured"]
+    environment:
+      OPENCLAW_CRON_MODE: queue
+      OPENCLAW_CRON_ROLES: worker
+      OPENCLAW_S3DB_URL: ${OPENCLAW_S3DB_URL}
+      OPENCLAW_CRON_GATEWAY_URL: ws://openclaw-gateway:18789
+      OPENCLAW_CRON_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+    volumes:
+      - ./openclaw.json:/home/node/.openclaw/openclaw.json:ro
+    networks:
+      - internal
+
+networks:
+  internal:
+    internal: true
 ```
 
 ## Environment Overrides (Worker)
