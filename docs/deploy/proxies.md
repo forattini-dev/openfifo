@@ -114,6 +114,55 @@ For tests only, you can use:
 - Keep proxy services **internal** and front the gateway with your preferred ingress.
 - If you run behind other reverse proxies, set `gateway.trustedProxies` to explicit IPs (not CIDR).
 
+## Docker Compose: mount `openclaw.json` + minimize access
+
+This pattern keeps the Gateway **internal-only** and mounts your `openclaw.json` as a volume.
+
+```yaml
+services:
+  openclaw:
+    image: ghcr.io/openclaw/openclaw:latest
+    environment:
+      OPENCLAW_CONFIG_PATH: /config/openclaw.json
+      OPENCLAW_S3DB_URL: s3://<bucket>/<prefix>?region=<region>
+      OPENAI_BASE_URL: http://claude-max-proxy:3456/v1
+      OPENAI_API_KEY: not-needed
+    volumes:
+      - ./config/openclaw.json:/config/openclaw.json:ro
+      - ./state:/home/openclaw/.openclaw
+    networks:
+      - internal
+    expose:
+      - "18789"
+    # No "ports:" => not reachable from the host/Internet.
+
+  claude-max-proxy:
+    image: your/claude-max-proxy:latest
+    networks:
+      - internal
+    expose:
+      - "3456"
+
+  codex-proxy:
+    image: your/codex-proxy:latest
+    networks:
+      - internal
+    expose:
+      - "8080"
+
+networks:
+  internal:
+    internal: true
+```
+
+Notes:
+
+- `OPENCLAW_CONFIG_PATH` lets you mount a single config file. If you want the Gateway to edit config,
+  remove `:ro` or mount the entire state directory and place `openclaw.json` under `./state`.
+- The `./state` volume keeps device identity, pairing approvals, and UI settings persistent even with s3db.
+- For **least access**, keep `gateway.bind=loopback`, omit `ports`, and only access via a trusted reverse proxy
+  or by `docker compose exec` + `openclaw` CLI.
+
 ## Troubleshooting
 
 - If OpenClaw reports missing API keys, ensure `OPENAI_API_KEY` is set to any non-empty value.
