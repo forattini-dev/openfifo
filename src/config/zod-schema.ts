@@ -350,6 +350,7 @@ export const OpenClawSchema = z
           })
           .strict()
           .optional(),
+        sessionRetention: z.union([z.string(), z.literal(false)]).optional(),
       })
       .strict()
       .optional(),
